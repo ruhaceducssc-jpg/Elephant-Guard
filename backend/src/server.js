@@ -33,6 +33,7 @@ app.use(cors());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
+app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/guards', require('./routes/guardRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/alerts', require('./routes/alertRoutes'));

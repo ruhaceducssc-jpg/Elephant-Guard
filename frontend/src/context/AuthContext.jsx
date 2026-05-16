@@ -22,7 +22,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const { data } = await api.post('/guards/login', { email, password });
+    const { data } = await api.post('/auth/login', { email, password });
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data));
     setUser(data);
@@ -30,7 +30,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (userData) => {
-    const { data } = await api.post('/guards/register', userData);
+    const { data } = await api.post('/auth/register', userData);
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data));
     setUser(data);

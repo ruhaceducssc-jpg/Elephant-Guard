@@ -13,7 +13,7 @@ const AlertCard = ({ alert }) => {
   };
 
   const imageUrl = alert.image 
-    ? `http://localhost:5000/uploads/${alert.image}` 
+    ? (alert.image.startsWith('http') ? alert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${alert.image}`) 
     : 'https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?auto=format&fit=crop&q=80&w=400';
 
   const lat = alert.latitude || (alert.coordinates ? alert.coordinates[1] : null);

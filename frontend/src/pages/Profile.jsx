@@ -4,7 +4,7 @@ import {
   Globe, Clock, Bell, Settings, Eye, EyeOff, Activity, 
   Monitor, LogOut, ShieldAlert, Heart, ChevronRight,
   Camera, CheckCircle, AlertTriangle, Smartphone, Volume2, 
-  Zap, Moon, RefreshCw, Navigation
+  Zap, Moon, RefreshCw, Navigation, Key
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -19,8 +19,10 @@ const Profile = () => {
   const [activeTab, setActiveTab] = useState('general');
   const [isLoading, setIsLoading] = useState(false);
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
+  const [isSecurityKeyLoading, setIsSecurityKeyLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showSecurityKey, setShowSecurityKey] = useState(false);
   
   const [fullProfile, setFullProfile] = useState(null);
   const [formData, setFormData] = useState({
@@ -60,6 +62,12 @@ const Profile = () => {
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
+  });
+
+  const [securityKeyData, setSecurityKeyData] = useState({
+    securityKey: '',
+    confirmSecurityKey: '',
+    password: ''
   });
 
   // Safety date formatter
@@ -133,9 +141,16 @@ const Profile = () => {
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    if (!passwordData.currentPassword || !passwordData.newPassword) {
+      return toast.error('Please fill all password fields');
+    }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       return toast.error('Passwords do not match');
     }
+    if (passwordData.newPassword.length < 6) {
+      return toast.error('New password must be at least 6 characters');
+    }
+
     setIsPasswordLoading(true);
     try {
       await api.put('/guards/password', {
@@ -144,10 +159,39 @@ const Profile = () => {
       });
       toast.success('Security credentials updated');
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      fetchFullProfile();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Password update failed');
     } finally {
       setIsPasswordLoading(false);
+    }
+  };
+
+  const handleSecurityKeySubmit = async (e) => {
+    e.preventDefault();
+    if (!securityKeyData.securityKey || !securityKeyData.password) {
+      return toast.error('Please fill all fields');
+    }
+    if (securityKeyData.securityKey !== securityKeyData.confirmSecurityKey) {
+      return toast.error('Security keys do not match');
+    }
+    if (securityKeyData.securityKey.length < 8) {
+      return toast.error('Security key should be at least 8 characters for safety');
+    }
+
+    setIsSecurityKeyLoading(true);
+    try {
+      await api.post('/guards/security-key', {
+        securityKey: securityKeyData.securityKey,
+        password: securityKeyData.password
+      });
+      toast.success('Recovery Security Key established');
+      setSecurityKeyData({ securityKey: '', confirmSecurityKey: '', password: '' });
+      fetchFullProfile();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Security key update failed');
+    } finally {
+      setIsSecurityKeyLoading(false);
     }
   };
 
@@ -184,6 +228,19 @@ const Profile = () => {
       }
     );
   };
+
+  const getPasswordStrength = (pass) => {
+    if (!pass) return 0;
+    let strength = 0;
+    if (pass.length >= 6) strength++;
+    if (pass.length >= 10) strength++;
+    if (/[A-Z]/.test(pass)) strength++;
+    if (/[0-9]/.test(pass)) strength++;
+    if (/[^A-Za-z0-9]/.test(pass)) strength++;
+    return strength;
+  };
+
+  const passwordStrength = getPasswordStrength(passwordData.newPassword);
 
   if (!fullProfile) {
     return (
@@ -224,7 +281,7 @@ const Profile = () => {
                  <div className="w-24 h-24 bg-white rounded-[2rem] p-1 shadow-2xl overflow-hidden">
                     {fullProfile.avatar ? (
                       <img 
-                        src={`${import.meta.env.VITE_API_URL.replace('/api', '')}/uploads/${fullProfile.avatar}`} 
+                        src={fullProfile.avatar.startsWith('http') ? fullProfile.avatar : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${fullProfile.avatar}`} 
                         alt="Profile" 
                         className="w-full h-full object-cover rounded-[1.8rem]"
                       />
@@ -301,11 +358,10 @@ const Profile = () => {
         {/* Right Column: Tab Content */}
         <div className="lg:col-span-8">
            <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm min-h-[700px] flex flex-col">
-              <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
                 <div className="p-10 space-y-8 flex-1">
                   {/* General Info Tab */}
                   {activeTab === 'general' && (
-                    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <form onSubmit={handleSubmit} className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div>
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center gap-3">
                            <div className="w-10 h-10 bg-primary-100 text-primary-600 rounded-xl flex items-center justify-center">
@@ -417,12 +473,24 @@ const Profile = () => {
                             </div>
                          </div>
                       </div>
-                    </div>
+
+                      <div className="pt-8 flex justify-end">
+                        <button 
+                          type="submit"
+                          disabled={isLoading}
+                          className="px-10 py-4 bg-primary-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-primary-700 transition-all shadow-xl shadow-primary-100 flex items-center gap-3 disabled:opacity-50"
+                        >
+                          {isLoading ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                          Deploy Configurations
+                        </button>
+                      </div>
+                    </form>
                   )}
 
                   {/* Security Tab */}
                   {activeTab === 'security' && (
-                    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      {/* Password Section */}
                       <div>
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center gap-3">
                            <div className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center">
@@ -443,7 +511,7 @@ const Profile = () => {
                            </div>
                         </div>
 
-                        <div className="space-y-6">
+                        <form onSubmit={handlePasswordSubmit} className="space-y-6">
                            <div className="space-y-2">
                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">Current System Password</label>
                              <div className="relative">
@@ -466,7 +534,7 @@ const Profile = () => {
 
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                               <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">New Security Key</label>
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">New Security Key (Password)</label>
                                 <div className="relative">
                                   <Shield className="absolute left-4 top-4 text-gray-400" size={18} />
                                   <input 
@@ -483,6 +551,19 @@ const Profile = () => {
                                     {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                                   </button>
                                 </div>
+                                {/* Strength Indicator */}
+                                {passwordData.newPassword && (
+                                  <div className="px-2 pt-1">
+                                    <div className="flex gap-1 h-1">
+                                      {[1, 2, 3, 4, 5].map(i => (
+                                        <div key={i} className={`flex-1 rounded-full ${i <= passwordStrength ? (passwordStrength <= 2 ? 'bg-red-400' : passwordStrength <= 4 ? 'bg-amber-400' : 'bg-green-400') : 'bg-gray-100'}`}></div>
+                                      ))}
+                                    </div>
+                                    <p className="text-[8px] font-black uppercase tracking-tighter mt-1 text-gray-400">
+                                      {passwordStrength <= 2 ? 'Weak Encryption' : passwordStrength <= 4 ? 'Standard Security' : 'Military Grade'}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                               <div className="space-y-2">
                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">Verify New Key</label>
@@ -492,29 +573,115 @@ const Profile = () => {
                                     type="password" 
                                     value={passwordData.confirmPassword}
                                     onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-                                    className="w-full pl-12 pr-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm"
+                                    className={`w-full pl-12 pr-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 outline-none font-bold text-sm ${passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword ? 'ring-2 ring-red-200' : 'focus:ring-primary-500'}`}
                                   />
                                 </div>
                               </div>
                            </div>
 
                            <button 
-                             type="button"
-                             onClick={handlePasswordSubmit}
+                             type="submit"
                              disabled={isPasswordLoading || !passwordData.newPassword}
                              className="px-8 py-4 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-black transition-all shadow-xl shadow-gray-200 flex items-center gap-3 disabled:opacity-50"
                            >
                               {isPasswordLoading ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
                               Update Credentials
                            </button>
+                        </form>
+                      </div>
+
+                      {/* Recovery Key Section */}
+                      <div className="pt-12 border-t border-gray-100">
+                        <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center gap-3">
+                           <div className="w-10 h-10 bg-primary-50 text-primary-600 rounded-xl flex items-center justify-center">
+                              <Key size={20} />
+                           </div>
+                           Account Recovery Protocol
+                        </h3>
+
+                        <div className="bg-primary-50 border border-primary-100 p-6 rounded-[2rem] flex items-start gap-4 mb-8">
+                           <div className="w-12 h-12 bg-primary-100 text-primary-600 rounded-2xl flex items-center justify-center shrink-0">
+                              <Shield size={24} />
+                           </div>
+                           <div>
+                              <p className="text-sm font-black text-primary-900 uppercase tracking-tight">Recovery Intelligence</p>
+                              <p className="text-xs text-primary-700 font-medium leading-relaxed mt-1">
+                                Establish a secondary Security Key. This allows you to reset your command access even if you forget your primary password. Store it offline in a safe location.
+                                {fullProfile.securityKeyUpdatedAt && (
+                                  <span className="block mt-2 font-bold opacity-70 italic text-[10px]">
+                                    Last Protocol Update: {safeFormat(fullProfile.securityKeyUpdatedAt, 'PPPP p')}
+                                  </span>
+                                )}
+                              </p>
+                           </div>
                         </div>
+
+                        <form onSubmit={handleSecurityKeySubmit} className="space-y-6">
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">Establish Recovery Key</label>
+                                <div className="relative">
+                                  <Key className="absolute left-4 top-4 text-gray-400" size={18} />
+                                  <input 
+                                    type={showSecurityKey ? 'text' : 'password'} 
+                                    value={securityKeyData.securityKey}
+                                    onChange={(e) => setSecurityKeyData({...securityKeyData, securityKey: e.target.value})}
+                                    placeholder="Enter secure recovery phrase"
+                                    className="w-full pl-12 pr-12 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm"
+                                  />
+                                  <button 
+                                    type="button"
+                                    onClick={() => setShowSecurityKey(!showSecurityKey)}
+                                    className="absolute right-4 top-4 text-gray-400 hover:text-primary-600 transition-colors"
+                                  >
+                                    {showSecurityKey ? <EyeOff size={20} /> : <Eye size={20} />}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">Verify Recovery Key</label>
+                                <div className="relative">
+                                  <CheckCircle className="absolute left-4 top-4 text-gray-400" size={18} />
+                                  <input 
+                                    type="password" 
+                                    value={securityKeyData.confirmSecurityKey}
+                                    onChange={(e) => setSecurityKeyData({...securityKeyData, confirmSecurityKey: e.target.value})}
+                                    className="w-full pl-12 pr-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm"
+                                  />
+                                </div>
+                              </div>
+                           </div>
+
+                           <div className="space-y-2">
+                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">Authorize with Current Password</label>
+                             <div className="relative">
+                               <Lock className="absolute left-4 top-4 text-gray-400" size={18} />
+                               <input 
+                                 type="password" 
+                                 value={securityKeyData.password}
+                                 onChange={(e) => setSecurityKeyData({...securityKeyData, password: e.target.value})}
+                                 placeholder="Validate identity to set recovery key"
+                                 className="w-full pl-12 pr-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm"
+                               />
+                             </div>
+                           </div>
+
+                           <button 
+                             type="submit"
+                             disabled={isSecurityKeyLoading || !securityKeyData.securityKey}
+                             className="px-8 py-4 bg-primary-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-primary-700 transition-all shadow-xl shadow-primary-100 flex items-center gap-3 disabled:opacity-50"
+                           >
+                              {isSecurityKeyLoading ? <RefreshCw size={16} className="animate-spin" /> : <Shield size={16} />}
+                              Deploy Recovery Protocol
+                           </button>
+                        </form>
                       </div>
                     </div>
                   )}
 
                   {/* Notifications Tab */}
                   {activeTab === 'notifications' && (
-                    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <form onSubmit={handleSubmit} className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div>
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center gap-3">
                            <div className="w-10 h-10 bg-primary-100 text-primary-600 rounded-xl flex items-center justify-center">
@@ -604,21 +771,29 @@ const Profile = () => {
                          </div>
                       </div>
 
-                      <div className="pt-10">
-                         <button 
+                      <div className="pt-8 flex justify-between items-center">
+                        <button 
                            type="button"
                            onClick={handleTestTelegram}
-                           className="w-full py-5 bg-primary-50 text-primary-700 rounded-[2rem] border border-primary-100 font-black text-xs uppercase tracking-[0.3em] hover:bg-primary-600 hover:text-white transition-all shadow-sm"
+                           className="px-8 py-4 bg-primary-50 text-primary-700 rounded-2xl border border-primary-100 font-black text-[10px] uppercase tracking-[0.2em] hover:bg-primary-100 transition-all shadow-sm"
                          >
-                           Run Telegram Connectivity Diagnostics
-                         </button>
+                           Run Diagnostics
+                        </button>
+                        <button 
+                          type="submit"
+                          disabled={isLoading}
+                          className="px-10 py-4 bg-primary-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-primary-700 transition-all shadow-xl shadow-primary-100 flex items-center gap-3 disabled:opacity-50"
+                        >
+                          {isLoading ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                          Deploy Configurations
+                        </button>
                       </div>
-                    </div>
+                    </form>
                   )}
 
                   {/* Patrol Tab */}
                   {activeTab === 'patrol' && (
-                    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <form onSubmit={handleSubmit} className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div>
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center gap-3">
                            <div className="w-10 h-10 bg-primary-100 text-primary-600 rounded-xl flex items-center justify-center">
@@ -677,12 +852,23 @@ const Profile = () => {
                            </MapContainer>
                         </div>
                       </div>
-                    </div>
+
+                      <div className="pt-8 flex justify-end">
+                        <button 
+                          type="submit"
+                          disabled={isLoading}
+                          className="px-10 py-4 bg-primary-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-primary-700 transition-all shadow-xl shadow-primary-100 flex items-center gap-3 disabled:opacity-50"
+                        >
+                          {isLoading ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                          Deploy Configurations
+                        </button>
+                      </div>
+                    </form>
                   )}
 
                   {/* Emergency Tab */}
                   {activeTab === 'emergency' && (
-                    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <form onSubmit={handleSubmit} className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                        <div>
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center gap-3">
                            <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
@@ -736,7 +922,18 @@ const Profile = () => {
                            </div>
                         </div>
                       </div>
-                    </div>
+
+                      <div className="pt-8 flex justify-end">
+                        <button 
+                          type="submit"
+                          disabled={isLoading}
+                          className="px-10 py-4 bg-primary-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-primary-700 transition-all shadow-xl shadow-primary-100 flex items-center gap-3 disabled:opacity-50"
+                        >
+                          {isLoading ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                          Deploy Configurations
+                        </button>
+                      </div>
+                    </form>
                   )}
 
                   {/* Activity Tab */}
@@ -753,10 +950,11 @@ const Profile = () => {
                         <div className="space-y-4">
                            {[
                              { action: 'Security credentials rotated', time: fullProfile.lastPasswordChange, icon: <Lock /> },
+                             { action: 'Recovery key protocol updated', time: fullProfile.securityKeyUpdatedAt, icon: <Key /> },
                              { action: 'Account access initialized', time: fullProfile.lastLogin, icon: <Monitor /> },
                              { action: 'Command center configuration updated', time: fullProfile.updatedAt, icon: <Settings /> },
                              { action: 'Officer profile instantiated', time: fullProfile.createdAt, icon: <User /> },
-                           ].map((item, i) => (
+                           ].map((item, i) => item.time && (
                              <div key={i} className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 flex items-center justify-between group hover:bg-white transition-all">
                                 <div className="flex items-center gap-4">
                                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400 group-hover:text-primary-600 shadow-sm transition-colors">
@@ -792,16 +990,14 @@ const Profile = () => {
                          Discard Session
                       </button>
                       <button 
-                        type="submit"
-                        disabled={isLoading}
-                        className="px-10 py-4 bg-primary-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-primary-700 transition-all shadow-xl shadow-primary-100 flex items-center gap-3 disabled:opacity-50"
+                        type="button"
+                        onClick={() => setActiveTab('general')}
+                        className="text-[10px] font-black uppercase tracking-widest text-primary-600 hover:text-primary-700 transition-colors"
                       >
-                         {isLoading ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-                         Deploy Configurations
+                        Return to Command
                       </button>
                    </div>
                 </div>
-              </form>
            </div>
         </div>
       </div>

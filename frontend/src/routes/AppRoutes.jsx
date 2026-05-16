@@ -7,6 +7,7 @@ import MainLayout from '../layouts/MainLayout';
 import Home from '../pages/Home';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
+import ForgotPassword from '../pages/ForgotPassword';
 import Dashboard from '../pages/Dashboard';
 import LiveMap from '../pages/LiveMap';
 import Detection from '../pages/Detection';
@@ -17,16 +18,33 @@ import NotificationDashboard from '../pages/NotificationDashboard';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  if (loading) return <div className="h-screen flex items-center justify-center font-bold text-primary-700">Loading Protection System...</div>;
+  if (loading) return (
+    <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 space-y-4">
+      <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin"></div>
+      <p className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Authenticating Secure Link...</p>
+    </div>
+  );
   return isAuthenticated ? children : <Navigate to="/login" />;
 };
 
 const AppRoutes = () => {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 space-y-4">
+        <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin"></div>
+        <p className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Initializing Secure Grid...</p>
+      </div>
+    );
+  }
+
   return (
     <Routes>
       <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Login />} />
+      <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Register />} />
+      <Route path="/forgot-password" element={isAuthenticated ? <Navigate to="/dashboard" /> : <ForgotPassword />} />
       
       {/* Protected Guard Dashboard Routes */}
       <Route path="/dashboard" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>

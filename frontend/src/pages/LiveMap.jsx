@@ -256,7 +256,7 @@ const LiveMap = () => {
         <div className="absolute bottom-10 right-10 z-[1000] w-96 bg-white rounded-[3rem] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.4)] border border-gray-100 overflow-hidden animate-in slide-in-from-bottom duration-500">
            <div className="h-48 relative">
               <img 
-                src={selectedAlert.image ? `http://localhost:5000/uploads/${selectedAlert.image}` : '/assets/images/elephant-fallback.jpg'} 
+                src={selectedAlert.image ? (selectedAlert.image.startsWith('http') ? selectedAlert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${selectedAlert.image}`) : '/assets/images/elephant-fallback.jpg'} 
                 className="w-full h-full object-cover" 
                 alt="Detection" 
               />

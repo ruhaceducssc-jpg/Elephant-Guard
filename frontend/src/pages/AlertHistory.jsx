@@ -259,7 +259,7 @@ const AlertHistory = () => {
             >
               <div className="relative h-56">
                 <img 
-                  src={alert.image ? `http://localhost:5000/uploads/${alert.image}` : 'https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?auto=format&fit=crop&q=80&w=600'} 
+                  src={alert.image ? (alert.image.startsWith('http') ? alert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${alert.image}`) : 'https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?auto=format&fit=crop&q=80&w=600'} 
                   alt="Detection" 
                   className="w-full h-full object-cover group-hover:scale-110 transition duration-700"
                 />

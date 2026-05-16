@@ -1,87 +1,5 @@
 const Guard = require('../models/Guard');
-const jwt = require('jsonwebtoken');
-
-// Generate JWT Token
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d',
-  });
-};
-
-// @desc    Register a new guard
-// @route   POST /api/guards/register
-// @access  Public
-exports.registerGuard = async (req, res) => {
-  const { name, email, password, assignedArea, telegramChatId } = req.body;
-
-  if (!name || !email || !password || !assignedArea) {
-    return res.status(400).json({ message: 'Please provide all required fields' });
-  }
-
-  try {
-    const guardExists = await Guard.findOne({ email });
-
-    if (guardExists) {
-      return res.status(400).json({ message: 'Guard already exists with this email' });
-    }
-
-    const guard = await Guard.create({
-      name,
-      email,
-      password,
-      assignedArea,
-      telegramChatId: telegramChatId || '',
-    });
-
-    if (guard) {
-      res.status(201).json({
-        _id: guard._id,
-        name: guard.name,
-        email: guard.email,
-        assignedArea: guard.assignedArea,
-        telegramChatId: guard.telegramChatId,
-        token: generateToken(guard._id),
-      });
-    } else {
-      res.status(400).json({ message: 'Invalid guard data' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Authenticate a guard & get token
-// @route   POST /api/guards/login
-// @access  Public
-exports.loginGuard = async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    const guard = await Guard.findOne({ email }).select('+password');
-
-    if (guard && (await guard.matchPassword(password))) {
-      // Update last login
-      guard.lastLogin = new Date();
-      await guard.save();
-
-      res.json({
-        _id: guard._id,
-        name: guard.name,
-        email: guard.email,
-        assignedArea: guard.assignedArea,
-        telegramChatId: guard.telegramChatId,
-        role: guard.role,
-        avatar: guard.avatar,
-        accountStatus: guard.accountStatus,
-        token: generateToken(guard._id),
-      });
-    } else {
-      res.status(401).json({ message: 'Invalid email or password' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+const bcrypt = require('bcryptjs');
 
 // @desc    Get current logged-in guard profile
 // @route   GET /api/guards/me
@@ -168,6 +86,63 @@ exports.updatePassword = async (req, res) => {
     await guard.save();
 
     res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Set or update security key
+// @route   POST /api/guards/security-key
+// @access  Private
+exports.setSecurityKey = async (req, res) => {
+  const { securityKey, password } = req.body;
+
+  try {
+    const guard = await Guard.findById(req.guard._id).select('+password');
+
+    if (!(await guard.matchPassword(password))) {
+      return res.status(401).json({ message: 'Password incorrect' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    guard.securityKeyHash = await bcrypt.hash(securityKey, salt);
+    guard.securityKeyUpdatedAt = new Date();
+    await guard.save();
+
+    res.json({ message: 'Security key updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Recover password using security key
+// @route   POST /api/guards/recover
+// @access  Public (but requires email and security key)
+exports.recoverPassword = async (req, res) => {
+  const { email, securityKey, newPassword } = req.body;
+
+  try {
+    const guard = await Guard.findOne({ email }).select('+securityKeyHash');
+
+    if (!guard) {
+      return res.status(404).json({ message: 'Guard not found' });
+    }
+
+    if (!guard.securityKeyHash) {
+      return res.status(400).json({ message: 'No recovery key set for this account' });
+    }
+
+    const isMatch = await bcrypt.compare(securityKey, guard.securityKeyHash);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid security key' });
+    }
+
+    guard.password = newPassword;
+    guard.lastPasswordChange = new Date();
+    await guard.save();
+
+    res.json({ message: 'Password recovered successfully. You can now login.' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

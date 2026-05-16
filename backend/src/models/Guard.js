@@ -83,6 +83,13 @@ const guardSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  securityKeyHash: {
+    type: String,
+    select: false,
+  },
+  securityKeyUpdatedAt: {
+    type: Date,
+  },
 }, {
   timestamps: true,
 });

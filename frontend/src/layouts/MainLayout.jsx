@@ -33,18 +33,18 @@ const MainLayout = () => {
             
             <Link to="/dashboard/profile" className="flex items-center gap-3 pl-6 border-l hover:opacity-80 transition-opacity">
               <div className="text-right">
-                <p className="text-sm font-bold text-gray-800">{user?.name}</p>
+                <p className="text-sm font-bold text-gray-800">{user?.name || 'Loading...'}</p>
                 <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">{user?.assignedArea || 'Wildlife Guard'}</p>
               </div>
               <div className="w-10 h-10 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center font-bold overflow-hidden">
                 {user?.avatar ? (
                   <img 
-                    src={`${import.meta.env.VITE_API_URL.replace('/api', '')}/uploads/${user.avatar}`} 
+                    src={user.avatar.startsWith('http') ? user.avatar : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${user.avatar}`} 
                     alt="User" 
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  user?.name?.split(' ').map(n => n[0]).join('')
+                  user?.name ? user.name.split(' ').map(n => n[0]).join('') : <User size={18} />
                 )}
               </div>
             </Link>
