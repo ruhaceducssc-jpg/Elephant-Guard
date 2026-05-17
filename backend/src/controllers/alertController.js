@@ -6,7 +6,7 @@ const {
   resendNotification, 
   resendAllFailed 
 } = require('../services/notificationService');
-const { normalizeAlert } = require('../utils/alertUtils');
+const { normalizeAlert, isPointInPolygon } = require('../utils/alertUtils');
 
 // @desc    Create elephant alert
 // @route   POST /api/alerts
@@ -23,6 +23,30 @@ exports.createAlert = async (req, res) => {
   }
 
   try {
+    // Check if point is inside guard's patrol area
+    let insidePatrolArea = false;
+    if (req.guard && req.guard.patrolArea) {
+      insidePatrolArea = isPointInPolygon([lng, lat], req.guard.patrolArea);
+    }
+
+    // Deduplication check: Has this guard reported an elephant nearby in the last 2 minutes?
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    const existingAlert = await Alert.findOne({
+      detectedBy: req.guard ? req.guard._id : null,
+      detectedAt: { $gte: twoMinutesAgo },
+      location: {
+        $near: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $maxDistance: 500 // 500 meters radius
+        }
+      }
+    });
+
+    if (existingAlert) {
+      console.log('Duplicate alert detected by backend, skipping creation');
+      return res.status(200).json(normalizeAlert(existingAlert));
+    }
+
     let finalLocationName = locationName;
     if (!finalLocationName || finalLocationName === 'Unknown Location' || finalLocationName === 'Live Patrol Scan' || finalLocationName === 'Analyzed Gallery Upload') {
       finalLocationName = await getReadableLocation(lat, lng);
@@ -37,15 +61,16 @@ exports.createAlert = async (req, res) => {
       },
       confidence: parseFloat(confidence) || 0,
       detectedBy: req.guard ? req.guard._id : null,
+      insidePatrolArea,
     });
 
     const populatedAlert = await Alert.findById(alert._id).populate('detectedBy', 'name');
     const normalizedAlert = normalizeAlert(populatedAlert);
 
-    // Emit socket event for real-time dashboard
+    // Emit socket event for real-time dashboard (only to the guard who detected it)
     const io = req.app.get('socketio');
-    if (io) {
-      io.emit('new-elephant-alert', normalizedAlert);
+    if (io && req.guard) {
+      io.to(req.guard._id.toString()).emit('new-elephant-alert', normalizedAlert);
     }
 
     // Trigger notifications in background
@@ -93,7 +118,11 @@ exports.resendAllFailedNotifications = async (req, res) => {
 // @access  Private
 exports.getAllNotifications = async (req, res) => {
   try {
-    const notifications = await NotificationDelivery.find()
+    // Only show notifications for alerts created by this guard
+    const alerts = await Alert.find({ detectedBy: req.guard._id }).select('_id');
+    const alertIds = alerts.map(a => a._id);
+
+    const notifications = await NotificationDelivery.find({ alertId: { $in: alertIds } })
       .sort('-createdAt')
       .limit(200);
     res.json(notifications);
@@ -107,6 +136,10 @@ exports.getAllNotifications = async (req, res) => {
 // @access  Private
 exports.getAlertNotifications = async (req, res) => {
   try {
+    // Verify alert ownership/permission
+    const alert = await Alert.findOne({ _id: req.params.id, detectedBy: req.guard._id });
+    if (!alert) return res.status(403).json({ message: 'Not authorized to view these logs' });
+
     const notifications = await NotificationDelivery.find({ alertId: req.params.id })
       .sort('residentName');
     res.json(notifications);
@@ -121,7 +154,9 @@ exports.getAlertNotifications = async (req, res) => {
 exports.getAlerts = async (req, res) => {
   const { status, areaName, minConfidence, dateFrom, dateTo, search } = req.query;
   
-  let query = {};
+  // Scope to current guard
+  let query = { detectedBy: req.guard._id };
+  
   if (status && status !== 'all') query.alertStatus = status;
   if (minConfidence) query.confidence = { $gte: parseFloat(minConfidence) };
   

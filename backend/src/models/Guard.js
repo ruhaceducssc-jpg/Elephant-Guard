@@ -71,6 +71,16 @@ const guardSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  patrolArea: {
+    type: {
+      type: String,
+      enum: ['Polygon'],
+      default: 'Polygon',
+    },
+    coordinates: {
+      type: [[[Number]]], // Array of linear rings, each a list of [lng, lat]
+    },
+  },
   accountStatus: {
     type: String,
     enum: ['active', 'suspended', 'on-leave'],
@@ -97,7 +107,7 @@ const guardSchema = new mongoose.Schema({
 // Encrypt password using bcrypt
 guardSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
 
   const salt = await bcrypt.genSalt(10);

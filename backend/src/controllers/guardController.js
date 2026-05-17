@@ -32,6 +32,7 @@ exports.updateMe = async (req, res) => {
       guard.phone = req.body.phone || guard.phone;
       guard.assignedArea = req.body.assignedArea || guard.assignedArea;
       guard.telegramChatId = req.body.telegramChatId !== undefined ? req.body.telegramChatId : guard.telegramChatId;
+      guard.patrolArea = req.body.patrolArea !== undefined ? req.body.patrolArea : guard.patrolArea;
       guard.language = req.body.language || guard.language;
       guard.timezone = req.body.timezone || guard.timezone;
       guard.avatar = req.body.avatar || guard.avatar;
@@ -70,22 +71,31 @@ exports.updateMe = async (req, res) => {
 exports.updatePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Please provide current and new password' });
+  }
+
   try {
+    // Explicitly select password field as it is hidden by default in schema
     const guard = await Guard.findById(req.guard._id).select('+password');
 
     if (!guard) {
       return res.status(404).json({ message: 'Guard not found' });
     }
 
-    if (!(await guard.matchPassword(currentPassword))) {
-      return res.status(401).json({ message: 'Current password incorrect' });
+    // Verify current password using bcrypt
+    const isMatch = await bcrypt.compare(currentPassword, guard.password);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid current password' });
     }
 
+    // Update password (pre-save hook will handle hashing)
     guard.password = newPassword;
     guard.lastPasswordChange = new Date();
     await guard.save();
 
-    res.json({ message: 'Password updated successfully' });
+    res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

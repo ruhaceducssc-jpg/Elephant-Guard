@@ -37,7 +37,7 @@ exports.createUser = async (req, res) => {
 // @access  Private
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find({}).populate('registeredBy', 'name');
+    const users = await User.find({ registeredBy: req.guard._id }).populate('registeredBy', 'name');
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -49,7 +49,7 @@ exports.getUsers = async (req, res) => {
 // @access  Private
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findOne({ _id: req.params.id, registeredBy: req.guard._id });
 
     if (user) {
       res.json(user);

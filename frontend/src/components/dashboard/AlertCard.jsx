@@ -1,80 +1,75 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, MapPin, Send, CheckCircle, XCircle } from 'lucide-react';
+import { Clock, MapPin, Send, CheckCircle, XCircle, ShieldAlert } from 'lucide-react';
 import { format, isValid } from 'date-fns';
 
 const AlertCard = ({ alert }) => {
   const navigate = useNavigate();
   
   const safeFormat = (date, formatStr) => {
-    if (!date) return '--:--';
+    if (!date) return 'N/A';
     const d = new Date(date);
-    return isValid(d) ? format(d, formatStr) : '--:--';
+    return isValid(d) ? format(d, formatStr) : 'N/A';
   };
 
   const imageUrl = alert.image 
     ? (alert.image.startsWith('http') ? alert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${alert.image}`) 
     : 'https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?auto=format&fit=crop&q=80&w=400';
 
-  const lat = alert.latitude || (alert.coordinates ? alert.coordinates[1] : null);
-  const lng = alert.longitude || (alert.coordinates ? alert.coordinates[0] : null);
-  const locationName = alert.areaName || alert.locationName || 'Unknown Location';
-
-  // Notification Status Helpers
-  const getNotificationIcon = () => {
-    switch(alert.notificationStatus) {
-      case 'sent': return <CheckCircle size={14} className="text-green-500" />;
-      case 'failed': return <XCircle size={14} className="text-red-500" />;
-      case 'partial': return <Send size={14} className="text-amber-500" />;
-      default: return <Clock size={14} className="text-gray-400" />;
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'active': return 'badge-danger';
+      case 'cleared': return 'badge-success';
+      default: return 'badge-primary';
     }
   };
 
-  const getNotificationText = () => {
-    if (!alert.notificationStatus || alert.notificationStatus === 'pending') return 'Broadcasting...';
-    if (alert.notificationStatus === 'sent') return `Sent to ${alert.recipientCount || 0} users`;
-    if (alert.notificationStatus === 'partial') return `Partial (${alert.recipientCount || 0} sent)`;
-    return 'Broadcast Failed';
-  };
-
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition">
-      <div className="relative h-40">
-        <img src={imageUrl} alt="Detection" className="w-full h-full object-cover" />
-        <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold uppercase ${
-          alert.status === 'active' || alert.alertStatus === 'new' ? 'bg-red-600 text-white' : 'bg-gray-500 text-white'
-        }`}>
-          {alert.status || alert.alertStatus}
+    <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-soft group hover:border-primary-100 transition-all duration-500">
+      <div className="relative h-44 overflow-hidden">
+        <img 
+          src={imageUrl} 
+          alt="Detection" 
+          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent"></div>
+        <div className="absolute top-4 right-4">
+           <span className={`badge ${getStatusColor(alert.alertStatus)}`}>
+             {alert.alertStatus || 'Tactical'}
+           </span>
         </div>
-        
-        {/* Notification Status Overlay */}
-        <div className="absolute bottom-3 left-3 right-3 bg-black/60 backdrop-blur-md py-1.5 px-3 rounded-lg flex items-center gap-2 border border-white/10">
-          {getNotificationIcon()}
-          <span className="text-[10px] font-bold text-white uppercase tracking-wider">{getNotificationText()}</span>
+        <div className="absolute bottom-4 left-6 right-6 flex items-end justify-between text-white">
+           <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary-200">Intelligence Node</p>
+              <h4 className="font-bold text-lg tracking-tight truncate max-w-[200px]">
+                {alert.locationName || alert.areaName}
+              </h4>
+           </div>
+           <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Confidence</p>
+              <p className="font-bold text-xl leading-none">{(alert.confidence * 100).toFixed(0)}%</p>
+           </div>
         </div>
       </div>
-      <div className="p-4 space-y-3">
-        <div className="flex items-start justify-between">
-          <h3 className="font-bold text-gray-800 leading-tight">Elephant Spotted</h3>
-          <span className="text-xs text-primary-600 font-bold">{(alert.confidence * 100).toFixed(0)}% Match</span>
-        </div>
-        
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <MapPin size={16} />
-            <span className="truncate">{locationName}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Clock size={16} />
-            <span>{safeFormat(alert.detectedAt, 'p')} • {safeFormat(alert.detectedAt, 'MMM dd')}</span>
-          </div>
+
+      <div className="p-6 space-y-4">
+        <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-widest">
+           <div className="flex items-center gap-2">
+              <Clock size={14} className="text-primary-600" />
+              {safeFormat(alert.detectedAt, 'HH:mm:ss')}
+           </div>
+           <div className="flex items-center gap-2">
+              <Send size={14} className="text-primary-600" />
+              {alert.notificationStatus === 'sent' ? 'Relay Active' : 'Relay Pending'}
+           </div>
         </div>
 
         <button 
           onClick={() => navigate(`/dashboard/map/${alert.id || alert._id}`)}
-          className="w-full mt-2 py-3 text-xs font-black uppercase tracking-widest text-white bg-gray-900 rounded-xl hover:bg-black transition-all shadow-lg shadow-gray-200"
+          className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-primary-700 transition-all duration-300 shadow-lg shadow-primary-200 flex items-center justify-center gap-2 active:scale-95"
         >
-          Inspect on Map
+          <ShieldAlert size={16} />
+          View on Map
         </button>
       </div>
     </div>

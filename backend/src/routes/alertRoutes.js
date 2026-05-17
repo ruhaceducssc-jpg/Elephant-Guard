@@ -18,7 +18,7 @@ const upload = require('../middleware/upload');
 
 router.route('/')
   .post(protect, upload.single('image'), createAlert)
-  .get(getAlerts);
+  .get(protect, getAlerts);
 
 router.get('/notifications', protect, getAllNotifications);
 router.post('/notifications/test', protect, testNotification);

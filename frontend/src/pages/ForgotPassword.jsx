@@ -25,10 +25,7 @@ const ForgotPassword = () => {
     if (formData.newPassword !== formData.confirmPassword) {
       return toast.error('Passwords do not match');
     }
-    if (formData.newPassword.length < 6) {
-      return toast.error('Password must be at least 6 characters');
-    }
-
+    
     setIsLoading(true);
     try {
       await api.post('/guards/recover', {
@@ -36,87 +33,91 @@ const ForgotPassword = () => {
         securityKey: formData.securityKey,
         newPassword: formData.newPassword
       });
-      toast.success('Password recovered successfully! Please login.');
+      toast.success('Access restored. Please sign in with your new password.');
       navigate('/login');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Recovery failed. Please check your credentials.');
+      toast.error(error.response?.data?.message || 'Recovery failed');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-        <div className="bg-primary-600 p-8 text-white text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-full mb-4">
-            <Key size={32} />
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+      <div className="max-w-[440px] w-full space-y-8">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-900 rounded-2xl shadow-xl mb-2">
+            <Key size={32} className="text-primary-500" />
           </div>
-          <h1 className="text-2xl font-bold">Account Recovery</h1>
-          <p className="text-primary-100 text-sm mt-1">Reset your command access using Security Key</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            Account <span className="text-primary-600">Recovery</span>
+          </h1>
+          <p className="text-slate-500 text-sm font-medium">Restore your command access</p>
         </div>
 
-        <div className="p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase">Command Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 text-gray-400" size={18} />
+        <div className="bg-white p-8 rounded-3xl shadow-soft border border-slate-200 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-slate-900"></div>
+          
+          <div className="mb-8">
+            <h2 className="text-lg font-bold text-slate-900">Reset Password</h2>
+            <p className="text-slate-500 text-xs">Enter your email and security key to reset your password</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-1.5">
+              <label className="label ml-1">Email Address</label>
+              <div className="relative group">
+                <Mail className="absolute left-4 top-3 text-slate-400" size={18} />
                 <input 
                   type="email" 
                   name="email"
                   required
                   value={formData.email}
                   onChange={handleChange}
-                  placeholder="guard@wildlife.gov.lk"
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent transition outline-none"
+                  placeholder="officer@wildlife.gov.lk"
+                  className="input pl-12"
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase">Security Recovery Key</label>
-              <div className="relative">
-                <ShieldAlert className="absolute left-3 top-3 text-gray-400" size={18} />
+            <div className="space-y-1.5">
+              <label className="label ml-1">Security Recovery Key</label>
+              <div className="relative group">
+                <ShieldAlert className="absolute left-4 top-3 text-slate-400" size={18} />
                 <input 
                   type={showSecurityKey ? 'text' : 'password'} 
                   name="securityKey"
                   required
                   value={formData.securityKey}
                   onChange={handleChange}
-                  placeholder="Enter your secret key"
-                  className="w-full pl-10 pr-10 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent transition outline-none"
+                  placeholder="Enter secret phrase"
+                  className="input pl-12 pr-12"
                 />
                 <button 
                   type="button"
                   onClick={() => setShowSecurityKey(!showSecurityKey)}
-                  className="absolute right-3 top-3 text-gray-400 hover:text-primary-600"
+                  className="absolute right-4 top-3 text-slate-400 hover:text-primary-600 transition-colors"
                 >
                   {showSecurityKey ? <RefreshCw size={16} /> : <Key size={16} />}
                 </button>
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase">New Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 text-gray-400" size={18} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="label ml-1">New Password</label>
                 <input 
-                  type={showPassword ? 'text' : 'password'} 
+                  type="password" 
                   name="newPassword"
                   required
                   value={formData.newPassword}
                   onChange={handleChange}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent transition outline-none"
+                  className="input"
                 />
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase">Confirm New Password</label>
-              <div className="relative">
-                <CheckCircle className="absolute left-3 top-3 text-gray-400" size={18} />
+              <div className="space-y-1.5">
+                <label className="label ml-1">Confirm Key</label>
                 <input 
                   type="password" 
                   name="confirmPassword"
@@ -124,7 +125,7 @@ const ForgotPassword = () => {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent transition outline-none"
+                  className="input"
                 />
               </div>
             </div>
@@ -132,18 +133,18 @@ const ForgotPassword = () => {
             <button 
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 mt-4 bg-primary-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-primary-700 transition disabled:opacity-50 shadow-lg shadow-primary-100"
+              className="w-full py-3.5 mt-4 bg-primary-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {isLoading ? 'Processing Recovery...' : 'Reset Password'}
-              {!isLoading && <ArrowRight size={20} />}
+              {isLoading ? 'Processing...' : 'Reset Password'}
+              {!isLoading && <ArrowRight size={18} />}
             </button>
           </form>
+        </div>
 
-          <div className="mt-6 text-center border-t pt-4">
-            <p className="text-sm text-gray-500">
-              Remembered your password? <Link to="/login" className="text-primary-600 font-bold hover:underline">Back to Login</Link>
-            </p>
-          </div>
+        <div className="text-center pt-2">
+          <p className="text-sm font-medium text-slate-500">
+            Remembered your credentials? <Link to="/login" className="text-primary-600 font-bold hover:text-primary-700 transition-colors">Sign in</Link>
+          </p>
         </div>
       </div>
     </div>

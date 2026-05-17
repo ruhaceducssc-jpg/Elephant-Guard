@@ -50,6 +50,13 @@ app.use(errorHandler);
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
+  socket.on('join', (guardId) => {
+    if (guardId) {
+      socket.join(guardId.toString());
+      console.log(`Guard ${guardId} joined room`);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected');
   });

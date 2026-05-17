@@ -12,7 +12,7 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @access  Public
 exports.registerGuard = async (req, res) => {
-  const { name, email, password, assignedArea, telegramChatId } = req.body;
+  const { name, email, password, assignedArea, telegramChatId, patrolArea } = req.body;
 
   if (!name || !email || !password || !assignedArea) {
     return res.status(400).json({ message: 'Please provide all required fields' });
@@ -31,6 +31,7 @@ exports.registerGuard = async (req, res) => {
       password,
       assignedArea,
       telegramChatId: telegramChatId || '',
+      patrolArea: patrolArea || null,
     });
 
     if (guard) {
@@ -41,6 +42,7 @@ exports.registerGuard = async (req, res) => {
         assignedArea: guard.assignedArea,
         telegramChatId: guard.telegramChatId,
         avatar: guard.avatar,
+        patrolArea: guard.patrolArea,
         token: generateToken(guard._id),
       });
     } else {
@@ -75,6 +77,7 @@ exports.loginGuard = async (req, res) => {
         email: guard.email,
         assignedArea: guard.assignedArea,
         telegramChatId: guard.telegramChatId,
+        patrolArea: guard.patrolArea,
         role: guard.role,
         avatar: guard.avatar,
         accountStatus: guard.accountStatus,

@@ -21,6 +21,10 @@ const alertSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  insidePatrolArea: {
+    type: Boolean,
+    default: false,
+  },
   alertStatus: {
     type: String,
     enum: ['new', 'acknowledged', 'resolved', 'dismissed'],

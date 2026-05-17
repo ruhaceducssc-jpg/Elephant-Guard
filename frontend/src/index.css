@@ -1,13 +1,82 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
-:root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+@layer base {
+  :root {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  }
+
+  body {
+    background-color: #f8fafc;
+    color: #334155;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight text-secondary-900;
+  }
 }
 
-body {
-  @apply bg-gray-50 text-gray-900;
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl border border-slate-200 shadow-soft transition-all duration-300;
+  }
+
+  .card-premium {
+    @apply bg-white rounded-3xl border border-slate-100 shadow-premium transition-all duration-300;
+  }
+
+  .card-hover {
+    @apply hover:shadow-premium-hover hover:border-primary-100;
+  }
+
+  .btn {
+    @apply px-5 py-2.5 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:pointer-events-none text-sm tracking-wide;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 text-white hover:bg-primary-700 shadow-sm shadow-primary-200/50;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300;
+  }
+
+  .btn-light-blue {
+    @apply bg-primary-50 text-primary-700 hover:bg-primary-100;
+  }
+
+  .btn-danger {
+    @apply bg-danger-600 text-white hover:bg-danger-700 shadow-sm shadow-danger-100;
+  }
+
+  .input {
+    @apply w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all duration-200 text-slate-800 placeholder:text-slate-400 text-sm font-medium;
+  }
+
+  .badge {
+    @apply px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border;
+  }
+
+  .badge-success {
+    @apply bg-success-50 text-success-700 border-success-100;
+  }
+
+  .badge-warning {
+    @apply bg-warning-50 text-warning-600 border-warning-100;
+  }
+
+  .badge-danger {
+    @apply bg-danger-50 text-danger-700 border-danger-100;
+  }
+
+  .badge-primary {
+    @apply bg-primary-50 text-primary-700 border-primary-100;
+  }
+
+  .label {
+    @apply text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5 block;
+  }
 }
 
 /* Fix for Leaflet Map Height */
@@ -17,10 +86,80 @@ body {
   z-index: 1;
 }
 
-/* Custom scrollbar for sidebar */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background-color: #f1f5f9;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+}
+
+/* Leaflet Customizations */
+.custom-popup .leaflet-popup-content-wrapper {
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 0;
+  overflow: hidden;
+}
+
+.custom-popup .leaflet-popup-content {
+  margin: 0;
+}
+
+.custom-popup .leaflet-popup-tip {
+  background-color: white;
+}
+
+/* Animations */
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 2s infinite ease-in-out;
+}
+
+/* Animation for page transitions */
+.page-fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
