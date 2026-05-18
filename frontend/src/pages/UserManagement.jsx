@@ -117,11 +117,22 @@ const UserManagement = () => {
     setCurrentUser(null);
   };
 
-  const filteredUsers = Array.isArray(users) ? users.filter(user => 
-    (user?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (user?.village || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (user?.phone || '').includes(searchTerm)
-  ) : [];
+  const filteredUsers = Array.isArray(users) ? users.filter(user => {
+    const s = searchTerm.toLowerCase();
+    const name = String(user?.name || '').toLowerCase();
+    const phone = String(user?.phone || '').toLowerCase();
+    const village = String(user?.village || '').toLowerCase();
+    const areaName = String(user?.areaLocation?.areaName || '').toLowerCase();
+    const id = String(user?._id || '').toLowerCase();
+    const telegramId = String(user?.telegramChatId || '').toLowerCase();
+
+    return name.includes(s) || 
+           phone.includes(s) || 
+           village.includes(s) || 
+           areaName.includes(s) || 
+           id.includes(s) || 
+           telegramId.includes(s);
+  }) : [];
 
   return (
     <div className="space-y-10 pb-12 page-fade-in">
@@ -147,7 +158,7 @@ const UserManagement = () => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
             type="text" 
-            placeholder="Search by name, village, or ID..."
+            placeholder="Search by name, phone, village, or Telegram ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="input pl-12"
@@ -195,6 +206,9 @@ const UserManagement = () => {
                         <div>
                           <p className="font-bold text-slate-900 text-sm tracking-tight">{user.name}</p>
                           <p className="text-[10px] text-slate-400 font-bold mt-0.5">{user.phone}</p>
+                          <p className={`text-[9px] font-bold mt-0.5 flex items-center gap-1 ${user.telegramChatId ? 'text-primary-600' : 'text-amber-500'}`}>
+                            <Send size={10} /> {user.telegramChatId ? `Telegram: ${user.telegramChatId}` : 'Telegram: Not Set'}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -287,8 +301,12 @@ const ResidentModal = ({ isOpen, onClose, isEditing, formData, onChange, onSubmi
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Telegram Chat ID</label>
-                <input type="text" name="telegramChatId" required value={formData.telegramChatId} onChange={onChange} placeholder="e.g. 123456789" className="input" />
+                <div className="flex justify-between items-center ml-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Telegram Chat ID</label>
+                  <span className="text-[9px] font-bold text-primary-500 uppercase tracking-tighter">Optional</span>
+                </div>
+                <input type="text" name="telegramChatId" value={formData.telegramChatId} onChange={onChange} placeholder="e.g. 123456789" className="input" />
+                <p className="text-[9px] text-slate-400 font-medium ml-1">Resident must start the Telegram bot first to get a valid ID.</p>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Geofence Radius (M)</label>

@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ShieldAlert, Mail, Lock, ArrowRight, Key, CheckCircle, RefreshCw } from 'lucide-react';
+import { ShieldAlert, Mail, Lock, ArrowRight, Key, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 
 const ForgotPassword = () => {
   const [formData, setFormData] = useState({
     email: '',
-    securityKey: '',
+    recoveryKey: '',
     newPassword: '',
     confirmPassword: ''
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showSecurityKey, setShowSecurityKey] = useState(false);
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -25,15 +26,19 @@ const ForgotPassword = () => {
     if (formData.newPassword !== formData.confirmPassword) {
       return toast.error('Passwords do not match');
     }
+
+    if (formData.newPassword.length < 6) {
+      return toast.error('Password must be at least 6 characters');
+    }
     
     setIsLoading(true);
     try {
-      await api.post('/guards/recover', {
+      await api.post('/guards/forgot-password', {
         email: formData.email,
-        securityKey: formData.securityKey,
+        recoveryKey: formData.recoveryKey,
         newPassword: formData.newPassword
       });
-      toast.success('Access restored. Please sign in with your new password.');
+      toast.success('Password reset successful. Please sign in with your new password.');
       navigate('/login');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Recovery failed');
@@ -60,7 +65,7 @@ const ForgotPassword = () => {
           
           <div className="mb-8">
             <h2 className="text-lg font-bold text-slate-900">Reset Password</h2>
-            <p className="text-slate-500 text-xs">Enter your email and security key to reset your password</p>
+            <p className="text-slate-500 text-xs">Enter your email and recovery key to reset your password</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -81,24 +86,24 @@ const ForgotPassword = () => {
             </div>
 
             <div className="space-y-1.5">
-              <label className="label ml-1">Security Recovery Key</label>
+              <label className="label ml-1">Recovery Key</label>
               <div className="relative group">
                 <ShieldAlert className="absolute left-4 top-3 text-slate-400" size={18} />
                 <input 
-                  type={showSecurityKey ? 'text' : 'password'} 
-                  name="securityKey"
+                  type={showRecoveryKey ? 'text' : 'password'} 
+                  name="recoveryKey"
                   required
-                  value={formData.securityKey}
+                  value={formData.recoveryKey}
                   onChange={handleChange}
                   placeholder="Enter secret phrase"
                   className="input pl-12 pr-12"
                 />
                 <button 
                   type="button"
-                  onClick={() => setShowSecurityKey(!showSecurityKey)}
+                  onClick={() => setShowRecoveryKey(!showRecoveryKey)}
                   className="absolute right-4 top-3 text-slate-400 hover:text-primary-600 transition-colors"
                 >
-                  {showSecurityKey ? <RefreshCw size={16} /> : <Key size={16} />}
+                  {showRecoveryKey ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
@@ -106,27 +111,45 @@ const ForgotPassword = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="label ml-1">New Password</label>
-                <input 
-                  type="password" 
-                  name="newPassword"
-                  required
-                  value={formData.newPassword}
-                  onChange={handleChange}
-                  placeholder="••••••••"
-                  className="input"
-                />
+                <div className="relative">
+                  <input 
+                    type={showNewPassword ? 'text' : 'password'} 
+                    name="newPassword"
+                    required
+                    value={formData.newPassword}
+                    onChange={handleChange}
+                    placeholder="••••••••"
+                    className="input pr-10"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600"
+                  >
+                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
-                <label className="label ml-1">Confirm Key</label>
-                <input 
-                  type="password" 
-                  name="confirmPassword"
-                  required
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  placeholder="••••••••"
-                  className="input"
-                />
+                <label className="label ml-1">Confirm Password</label>
+                <div className="relative">
+                  <input 
+                    type={showConfirmPassword ? 'text' : 'password'} 
+                    name="confirmPassword"
+                    required
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="••••••••"
+                    className="input pr-10"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600"
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -135,8 +158,17 @@ const ForgotPassword = () => {
               disabled={isLoading}
               className="w-full py-3.5 mt-4 bg-primary-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {isLoading ? 'Processing...' : 'Reset Password'}
-              {!isLoading && <ArrowRight size={18} />}
+              {isLoading ? (
+                <>
+                  <RefreshCw className="animate-spin" size={18} />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  Reset Password
+                  <ArrowRight size={18} />
+                </>
+              )}
             </button>
           </form>
         </div>

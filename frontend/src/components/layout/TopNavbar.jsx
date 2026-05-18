@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink, Link, useLocation } from 'react-router-dom';
+import { NavLink, Link } from 'react-router-dom';
 import { 
   LayoutDashboard, Camera, Map, History, UserPlus, 
   User, LogOut, ShieldAlert, Send, Menu, X, ChevronDown, MapPin, Shield
@@ -9,13 +9,12 @@ import { useAuth } from '../../context/AuthContext';
 const TopNavbar = () => {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const location = useLocation();
 
   const menuItems = [
     { path: '/dashboard', name: 'Overview', icon: <LayoutDashboard size={18} /> },
-    { path: '/dashboard/detection', name: 'AI Scanner', icon: <Camera size={18} /> },
-    { path: '/dashboard/map', name: 'Tactical Map', icon: <Map size={18} /> },
-    { path: '/dashboard/history', name: 'Incident Logs', icon: <History size={18} /> },
+    { path: '/dashboard/detection', name: 'Scanner', icon: <Camera size={18} /> },
+    { path: '/dashboard/map', name: 'Map', icon: <Map size={18} /> },
+    { path: '/dashboard/history', name: 'Logs', icon: <History size={18} /> },
     { path: '/dashboard/delivery', name: 'Tracking', icon: <Send size={18} /> },
     { path: '/dashboard/register-user', name: 'Registrations', icon: <UserPlus size={18} /> },
     { path: '/dashboard/profile', name: 'Profile', icon: <User size={18} /> },
@@ -41,13 +40,14 @@ const TopNavbar = () => {
             </Link>
 
             {/* Desktop Navigation Links */}
-            <div className="hidden lg:ml-10 lg:flex lg:space-x-1">
+            <div className="hidden lg:ml-10 lg:flex lg:space-x-1 lg:items-center">
               {menuItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  end={item.path === '/dashboard'}
                   className={({ isActive }) => 
-                    `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                    `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
                       isActive 
                         ? 'bg-emerald-50 text-emerald-700' 
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -64,9 +64,9 @@ const TopNavbar = () => {
           {/* Right: Tactical Status & User Profile */}
           <div className="flex items-center gap-2 md:gap-6">
             {/* Tactical Status (Hidden on small mobile) */}
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-xl">
+            <div className="hidden md:flex items-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-100 rounded-xl">
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Network Active</span>
+              <span className="text-sm font-bold text-emerald-700 uppercase tracking-widest">Network Active</span>
             </div>
 
             <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
@@ -127,6 +127,7 @@ const TopNavbar = () => {
               <NavLink
                 key={item.path}
                 to={item.path}
+                end={item.path === '/dashboard'}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={({ isActive }) => 
                   `flex items-center gap-4 px-4 py-4 rounded-xl text-base font-bold transition-all ${

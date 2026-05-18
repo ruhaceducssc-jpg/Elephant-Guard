@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  User, Mail, Shield, MapPin, Save, Lock, Send, Phone, 
-  Globe, Clock, Bell, Settings, Eye, EyeOff, Activity, 
-  Monitor, LogOut, ShieldAlert, Heart, ChevronRight,
-  Camera, CheckCircle, AlertTriangle, Smartphone, Volume2, 
-  Zap, Moon, RefreshCw, Navigation, Key, Map as MapIcon
+  User, Shield, MapPin, Save, Lock, Send, 
+  Eye, EyeOff, ShieldAlert, ChevronRight,
+  Camera, AlertTriangle, RefreshCw, Key, Map as MapIcon,
+  Zap
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -19,11 +18,11 @@ const Profile = () => {
   const { user, updateProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
   const [isLoading, setIsLoading] = useState(false);
-  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
-  const [isSecurityKeyLoading, setIsSecurityKeyLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [isSecurityLoading, setIsSecurityLoading] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showSecurityKey, setShowSecurityKey] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
   
   const [fullProfile, setFullProfile] = useState(null);
   const [formData, setFormData] = useState({
@@ -35,41 +34,14 @@ const Profile = () => {
     language: 'English',
     timezone: 'Asia/Colombo',
     avatar: '',
-    patrolArea: null,
-    notificationPreferences: {
-      telegramEnabled: true,
-      emailEnabled: true,
-      browserEnabled: true,
-      soundEnabled: true,
-      vibrationEnabled: true
-    },
-    quietHours: {
-      enabled: false,
-      start: '22:00',
-      end: '06:00'
-    },
-    patrolSettings: {
-      defaultGeofenceRadius: 1000,
-      mapZoom: 13,
-      focusArea: ''
-    },
-    emergencyContact: {
-      name: '',
-      phone: '',
-      stationName: ''
-    }
+    patrolArea: null
   });
 
-  const [passwordData, setPasswordData] = useState({
+  const [securityData, setSecurityData] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: ''
-  });
-
-  const [securityKeyData, setSecurityKeyData] = useState({
-    securityKey: '',
-    confirmSecurityKey: '',
-    password: ''
+    confirmPassword: '',
+    recoveryKey: ''
   });
 
   // Safety date formatter
@@ -92,11 +64,7 @@ const Profile = () => {
         language: data.language || 'English',
         timezone: data.timezone || 'Asia/Colombo',
         avatar: data.avatar || '',
-        patrolArea: data.patrolArea || null,
-        notificationPreferences: data.notificationPreferences || formData.notificationPreferences,
-        quietHours: data.quietHours || formData.quietHours,
-        patrolSettings: data.patrolSettings || formData.patrolSettings,
-        emergencyContact: data.emergencyContact || formData.emergencyContact
+        patrolArea: data.patrolArea || null
       });
     } catch (error) {
       toast.error('Failed to retrieve profile');
@@ -128,6 +96,10 @@ const Profile = () => {
     }
   };
 
+  const handleSecurityChange = (e) => {
+    setSecurityData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
   const handleAreaSave = (polygon) => {
     setFormData(prev => ({ ...prev, patrolArea: polygon }));
     toast.success('Patrol boundary defined. Click Save to synchronize.');
@@ -147,53 +119,34 @@ const Profile = () => {
     }
   };
 
-  const handlePasswordSubmit = async (e) => {
+  const handleSecuritySubmit = async (e) => {
     e.preventDefault();
-    if (!passwordData.currentPassword || !passwordData.newPassword) {
-      return toast.error('Please fill all password fields');
+    if (!securityData.currentPassword) {
+      return toast.error('Current password is required to update security');
     }
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      return toast.error('Passwords do not match');
+    
+    if (securityData.newPassword && securityData.newPassword !== securityData.confirmPassword) {
+      return toast.error('New passwords do not match');
     }
 
-    setIsPasswordLoading(true);
+    if (securityData.newPassword && securityData.newPassword.length < 6) {
+      return toast.error('New password must be at least 6 characters');
+    }
+
+    if (securityData.recoveryKey && securityData.recoveryKey.length < 6) {
+      return toast.error('Recovery key must be at least 6 characters');
+    }
+
+    setIsSecurityLoading(true);
     try {
-      await api.put('/guards/password', {
-        currentPassword: passwordData.currentPassword,
-        newPassword: passwordData.newPassword
-      });
-      toast.success('Password changed successfully');
-      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      await api.put('/guards/security', securityData);
+      toast.success('Security settings updated successfully');
+      setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '', recoveryKey: '' });
       fetchFullProfile();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Update failed');
+      toast.error(error.response?.data?.message || 'Security update failed');
     } finally {
-      setIsPasswordLoading(false);
-    }
-  };
-
-  const handleSecurityKeySubmit = async (e) => {
-    e.preventDefault();
-    if (!securityKeyData.securityKey || !securityKeyData.password) {
-      return toast.error('Validation required');
-    }
-    if (securityKeyData.securityKey !== securityKeyData.confirmSecurityKey) {
-      return toast.error('Recovery keys do not match');
-    }
-
-    setIsSecurityKeyLoading(true);
-    try {
-      await api.post('/guards/security-key', {
-        securityKey: securityKeyData.securityKey,
-        password: securityKeyData.password
-      });
-      toast.success('Security key established');
-      setSecurityKeyData({ securityKey: '', confirmSecurityKey: '', password: '' });
-      fetchFullProfile();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Error saving key');
-    } finally {
-      setIsSecurityKeyLoading(false);
+      setIsSecurityLoading(false);
     }
   };
 
@@ -302,10 +255,6 @@ const Profile = () => {
               { id: 'general', label: 'Account Settings', icon: <User /> },
               { id: 'security', label: 'Security & Access', icon: <Lock /> },
               { id: 'patrol', label: 'Patrol Boundary', icon: <MapIcon /> },
-              { id: 'notifications', label: 'Notifications', icon: <Bell /> },
-              { id: 'monitoring', label: 'Monitoring Prefs', icon: <Navigation size={18} /> },
-              { id: 'emergency', label: 'Emergency Info', icon: <Heart /> },
-              { id: 'activity', label: 'Activity History', icon: <Activity /> },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -444,27 +393,47 @@ const Profile = () => {
                         
                         <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-4 mb-8">
                            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
-                           <p className="text-xs text-amber-800 font-medium leading-relaxed uppercase tracking-tight">
-                              Regular password rotation is recommended. Last change: {safeFormat(fullProfile.lastPasswordChange || fullProfile.createdAt, 'PPPP')}
-                           </p>
+                           <div className="space-y-1">
+                             <p className="text-xs text-amber-800 font-bold uppercase tracking-tight">
+                                Security Status
+                             </p>
+                             <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
+                                Regular password rotation is recommended. Last change: {safeFormat(fullProfile.lastPasswordChange || fullProfile.createdAt, 'PPPP')}
+                             </p>
+                           </div>
                         </div>
 
-                        <form onSubmit={handlePasswordSubmit} className="space-y-6">
+                        <form onSubmit={handleSecuritySubmit} className="space-y-8">
                            <div className="space-y-1.5">
                              <label className="label ml-1">Current Password</label>
                              <div className="relative">
-                               <input type={showPassword ? 'text' : 'password'} value={passwordData.currentPassword} onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})} className="input" />
-                               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600 transition-colors">
-                                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                               <input 
+                                 type={showCurrentPassword ? 'text' : 'password'} 
+                                 name="currentPassword"
+                                 required
+                                 value={securityData.currentPassword} 
+                                 onChange={handleSecurityChange} 
+                                 className="input" 
+                                 placeholder="Verify identity to update security"
+                               />
+                               <button type="button" onClick={() => setShowCurrentPassword(!showCurrentPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600 transition-colors">
+                                 {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                </button>
                              </div>
                            </div>
 
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                               <div className="space-y-1.5">
-                                <label className="label ml-1">New Password</label>
+                                <label className="label ml-1">New Password (Optional)</label>
                                 <div className="relative">
-                                  <input type={showNewPassword ? 'text' : 'password'} value={passwordData.newPassword} onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})} className="input" />
+                                  <input 
+                                    type={showNewPassword ? 'text' : 'password'} 
+                                    name="newPassword"
+                                    value={securityData.newPassword} 
+                                    onChange={handleSecurityChange} 
+                                    className="input" 
+                                    placeholder="••••••••"
+                                  />
                                   <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
                                     {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                   </button>
@@ -472,58 +441,54 @@ const Profile = () => {
                               </div>
                               <div className="space-y-1.5">
                                 <label className="label ml-1">Confirm New Password</label>
-                                <input type="password" value={passwordData.confirmPassword} onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})} className="input" />
-                              </div>
-                           </div>
-
-                           <button type="submit" disabled={isPasswordLoading} className="btn btn-primary px-8 py-3 text-xs uppercase tracking-widest font-bold">
-                              {isPasswordLoading ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />}
-                              Update Password
-                           </button>
-                        </form>
-                      </div>
-
-                      <div className="pt-10 border-t border-slate-100">
-                        <div className="flex items-center gap-4 mb-8 px-1">
-                           <div className="w-10 h-10 bg-slate-50 text-slate-600 rounded-xl flex items-center justify-center border border-slate-100">
-                              <Key size={20} />
-                           </div>
-                           <div>
-                              <h3 className="text-lg font-bold text-slate-900 tracking-tight">Recovery Key</h3>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Secondary access method for emergencies</p>
-                           </div>
-                        </div>
-
-                        <form onSubmit={handleSecurityKeySubmit} className="space-y-6">
-                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="space-y-1.5">
-                                <label className="label ml-1">Establish Security Phrase</label>
                                 <div className="relative">
-                                  <input type={showSecurityKey ? 'text' : 'password'} value={securityKeyData.securityKey} onChange={(e) => setSecurityKeyData({...securityKeyData, securityKey: e.target.value})} className="input" />
-                                  <button type="button" onClick={() => setShowSecurityKey(!showSecurityKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
-                                    {showSecurityKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                                  <input 
+                                    type={showConfirmPassword ? 'text' : 'password'} 
+                                    name="confirmPassword"
+                                    value={securityData.confirmPassword} 
+                                    onChange={handleSecurityChange} 
+                                    className="input" 
+                                    placeholder="••••••••"
+                                  />
+                                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
+                                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                   </button>
                                 </div>
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className="label ml-1">Verify Phrase</label>
-                                <input type="password" value={securityKeyData.confirmSecurityKey} onChange={(e) => setSecurityKeyData({...securityKeyData, confirmSecurityKey: e.target.value})} className="input" />
                               </div>
                            </div>
 
                            <div className="space-y-1.5">
-                             <label className="label ml-1">Authorize with Current Password</label>
-                             <input type="password" value={securityKeyData.password} onChange={(e) => setSecurityKeyData({...securityKeyData, password: e.target.value})} placeholder="Validate identity" className="input" />
+                             <div className="flex justify-between items-center ml-1">
+                               <label className="label">Recovery Key (Optional)</label>
+                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Last updated: {safeFormat(fullProfile.securityKeyUpdatedAt, 'PP')}</span>
+                             </div>
+                             <div className="relative">
+                               <input 
+                                 type={showRecoveryKey ? 'text' : 'password'} 
+                                 name="recoveryKey"
+                                 value={securityData.recoveryKey} 
+                                 onChange={handleSecurityChange} 
+                                 className="input" 
+                                 placeholder="Enter secret recovery phrase"
+                               />
+                               <button type="button" onClick={() => setShowRecoveryKey(!showRecoveryKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
+                                 {showRecoveryKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                               </button>
+                             </div>
+                             <p className="text-[9px] text-slate-400 font-medium ml-1">Use this recovery key if you forget your password. Keep it private.</p>
                            </div>
 
-                           <button type="submit" disabled={isSecurityKeyLoading} className="btn btn-secondary px-8 py-3 text-xs uppercase tracking-widest font-bold border-slate-900 bg-slate-900 text-white hover:bg-black">
-                              {isSecurityKeyLoading ? <RefreshCw className="animate-spin" size={16} /> : <Shield size={16} />}
-                              Set Recovery Key
-                           </button>
+                           <div className="pt-2">
+                             <button type="submit" disabled={isSecurityLoading} className="btn btn-primary px-8 py-3 text-xs uppercase tracking-widest font-bold shadow-lg shadow-primary-200">
+                                {isSecurityLoading ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />}
+                                Update Security
+                             </button>
+                           </div>
                         </form>
                       </div>
                     </div>
                   )}
+
                 </div>
 
                 <div className="p-8 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">

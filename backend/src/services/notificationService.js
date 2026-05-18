@@ -17,9 +17,8 @@ const triggerAlertNotifications = async (alert, io) => {
   const normalizedAlert = normalizeAlert(alert);
 
   try {
-    // 1. Find ALL residents with telegramChatId and notification enabled
+    // 1. Find ALL active residents
     const allResidents = await User.find({ 
-      telegramChatId: { $exists: true, $ne: '' },
       notificationEnabled: true
     });
     
@@ -28,6 +27,8 @@ const triggerAlertNotifications = async (alert, io) => {
     const affectedResidentIds = [];
     
     for (const resident of allResidents) {
+      if (!resident.areaLocation || !resident.areaLocation.coordinates) continue;
+
       const resLng = resident.areaLocation.coordinates[0];
       const resLat = resident.areaLocation.coordinates[1];
       const radius = resident.geofenceRadiusMeters || 1000;
@@ -43,17 +44,22 @@ const triggerAlertNotifications = async (alert, io) => {
       }
     }
 
-    // 3. Create Pending Delivery Records
-    const deliveries = await Promise.all(affectedResidents.map(resident => 
-      NotificationDelivery.create({
+    // 3. Create Delivery Records for ALL affected residents
+    const deliveries = await Promise.all(affectedResidents.map(resident => {
+      const initialStatus = !resident.telegramChatId ? 'not_sent' : 'pending';
+      const initialError = !resident.telegramChatId ? 'Telegram Chat ID missing' : '';
+      
+      return NotificationDelivery.create({
         alertId: alert._id,
         residentId: resident._id,
         residentName: resident.name,
-        telegramChatId: resident.telegramChatId,
-        status: 'pending',
+        phone: resident.phone,
+        telegramChatId: resident.telegramChatId || 'NOT_SET',
+        status: initialStatus,
+        errorMessage: initialError,
         distanceFromElephant: resident.distanceToElephant
-      })
-    ));
+      });
+    }));
 
     // 4. Find all guards to notify
     const guardsToNotify = await Guard.find({ 
@@ -69,12 +75,16 @@ const triggerAlertNotifications = async (alert, io) => {
       const resident = affectedResidents[i];
       const delivery = deliveries[i];
 
+      // Skip those already marked as not_sent (missing chat id)
+      if (delivery.status === 'not_sent') continue;
+
       if (processedChatIds.has(resident.telegramChatId)) {
         await NotificationDelivery.findByIdAndUpdate(delivery._id, {
           status: 'sent',
           sentAt: new Date(),
           errorMessage: 'Duplicate chat ID skipped'
         });
+        successCount++;
         continue;
       }
       
@@ -112,12 +122,16 @@ const triggerAlertNotifications = async (alert, io) => {
 
     // 6. Update Alert Status
     let status = 'failed';
-    if (successCount === affectedResidents.length && affectedResidents.length > 0) {
+    const totalPossible = affectedResidents.filter(r => r.telegramChatId).length;
+    
+    if (successCount === totalPossible && totalPossible > 0) {
       status = 'sent';
     } else if (successCount > 0) {
       status = 'partial';
     } else if (affectedResidents.length === 0) {
-      status = 'none'; // No residents in geofence
+      status = 'none';
+    } else if (totalPossible === 0) {
+      status = 'failed'; // No one had a chat ID
     }
 
     const updatedAlert = await Alert.findByIdAndUpdate(alert._id, { 
@@ -142,6 +156,7 @@ const triggerAlertNotifications = async (alert, io) => {
   }
 };
 
+
 /**
  * Resends a specific notification
  */
@@ -152,10 +167,24 @@ const resendNotification = async (deliveryId, alertId, io) => {
   const alert = await Alert.findById(alertId).populate('detectedBy', 'name');
   if (!alert) throw new Error('Alert not found');
 
+  // Fetch current resident data to get latest telegramChatId
+  const resident = await User.findById(delivery.residentId);
+  if (!resident) throw new Error('Resident not found');
+  
+  if (!resident.telegramChatId) {
+    throw new Error('Resident still has no Telegram Chat ID linked');
+  }
+
+  // Update delivery record with latest chat ID if it was missing
+  if (delivery.telegramChatId === 'NOT_SET') {
+    delivery.telegramChatId = resident.telegramChatId;
+  }
+
   const normalizedAlert = normalizeAlert(alert);
-  const result = await sendAlert(delivery.telegramChatId, {
+  const result = await sendAlert(resident.telegramChatId, {
     ...normalizedAlert,
-    distanceFromResident: delivery.distanceFromElephant
+    distanceFromResident: delivery.distanceFromElephant,
+    residentAreaName: resident.areaLocation?.areaName
   });
 
   delivery.retryCount += 1;
@@ -183,7 +212,11 @@ const resendNotification = async (deliveryId, alertId, io) => {
  * Resends all failed notifications for an alert
  */
 const resendAllFailed = async (alertId, io) => {
-  const failedDeliveries = await NotificationDelivery.find({ alertId, status: 'failed' });
+  const failedDeliveries = await NotificationDelivery.find({ 
+    alertId, 
+    status: { $in: ['failed', 'not_sent'] } 
+  });
+  
   if (failedDeliveries.length === 0) return [];
 
   const alert = await Alert.findById(alertId).populate('detectedBy', 'name');
@@ -193,9 +226,19 @@ const resendAllFailed = async (alertId, io) => {
   const results = [];
 
   for (const delivery of failedDeliveries) {
-    const resendResult = await sendAlert(delivery.telegramChatId, {
+    // Fetch current resident data
+    const resident = await User.findById(delivery.residentId);
+    if (!resident || !resident.telegramChatId) continue;
+
+    // Update delivery record with latest chat ID if it was missing
+    if (delivery.telegramChatId === 'NOT_SET') {
+      delivery.telegramChatId = resident.telegramChatId;
+    }
+
+    const resendResult = await sendAlert(resident.telegramChatId, {
       ...normalizedAlert,
-      distanceFromResident: delivery.distanceFromElephant
+      distanceFromResident: delivery.distanceFromElephant,
+      residentAreaName: resident.areaLocation?.areaName
     });
 
     delivery.retryCount += 1;
@@ -206,6 +249,7 @@ const resendAllFailed = async (alertId, io) => {
       delivery.sentAt = new Date();
       delivery.errorMessage = '';
     } else {
+      delivery.status = 'failed';
       delivery.errorMessage = resendResult.error || 'Retry failed';
     }
 

@@ -49,7 +49,7 @@ const alertSchema = new mongoose.Schema({
   }],
   notificationStatus: {
   type: String,
-  enum: ['pending', 'sent', 'failed', 'partial'],
+  enum: ['pending', 'sent', 'failed', 'partial', 'none'],
   default: 'pending',
   },
   recipientCount: {

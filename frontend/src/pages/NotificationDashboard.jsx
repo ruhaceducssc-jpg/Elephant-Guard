@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Bell, Search, Filter, CheckCircle, XCircle, Clock, User, 
   MapPin, AlertTriangle, Info, RefreshCw, ChevronRight, 
-  ShieldAlert, BarChart3, Send, RotateCcw, Activity
+  ShieldAlert, BarChart3, Send, RotateCcw, Activity, Zap
 } from 'lucide-react';
 import api from '../services/api';
 import { format, isValid } from 'date-fns';
@@ -10,63 +10,71 @@ import { toast } from 'react-hot-toast';
 import { io } from 'socket.io-client';
 
 const NotificationDashboard = () => {
-  const [alerts, setAlerts] = useState([]);
-  const [selectedAlert, setSelectedAlert] = useState(null);
-  const [notifications, setNotifications] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [deliveries, setDeliveries] = useState([]);
+  const [summary, setSummary] = useState({ total: 0, sent: 0, failed: 0, pending: 0, notSent: 0 });
+  
   const [isLoading, setIsLoading] = useState(true);
-  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false);
-  const [isResending, setIsResending] = useState(false);
+  const [isDetailsLoading, setIsDetailsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Safety date formatter
   const safeFormat = (date, formatStr) => {
     if (!date) return '--:--';
     const d = new Date(date);
     return isValid(d) ? format(d, formatStr) : '--:--';
   };
 
-  const fetchData = async () => {
+  const fetchDeliveryDetails = useCallback(async (alertId) => {
+    if (!alertId) return;
+    setIsDetailsLoading(true);
+    try {
+      const { data } = await api.get(`/deliveries/${alertId}`);
+      if (data && data.success) {
+        setDeliveries(data.deliveries || []);
+        setSummary(data.summary || { total: 0, sent: 0, failed: 0, pending: 0, notSent: 0 });
+      }
+    } catch (error) {
+      console.error('Fetch details error:', error);
+      toast.error('Failed to load delivery logs');
+    } finally {
+      setIsDetailsLoading(false);
+    }
+  }, []);
+
+  const handleEventSelect = useCallback((event) => {
+    if (!event) return;
+    setSelectedEvent(event);
+    fetchDeliveryDetails(event.alertId);
+  }, [fetchDeliveryDetails]);
+
+  const fetchEvents = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data } = await api.get('/alerts');
-      if (Array.isArray(data)) {
-        setAlerts(data);
-        if (data.length > 0 && !selectedAlert) {
-          setSelectedAlert(data[0]);
-          fetchNotifications(data[0].id || data[0]._id);
+      const { data } = await api.get('/deliveries');
+      if (data && data.success && Array.isArray(data.events)) {
+        setEvents(data.events);
+        // If nothing selected yet, select the first one
+        if (data.events.length > 0 && !selectedEvent) {
+          handleEventSelect(data.events[0]);
         }
       }
     } catch (error) {
-      toast.error('Failed to sync alert data');
+      console.error('Fetch events error:', error);
+      toast.error('Failed to sync tracking data');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const fetchNotifications = async (alertId) => {
-    if (!alertId) return;
-    setIsNotificationsLoading(true);
-    try {
-      const { data } = await api.get(`/alerts/${alertId}/notifications`);
-      if (Array.isArray(data)) {
-        setNotifications(data);
-      } else {
-        setNotifications([]);
-      }
-    } catch (error) {
-      toast.error('Failed to load delivery logs');
-      setNotifications([]);
-    } finally {
-      setIsNotificationsLoading(false);
-    }
-  };
+  }, [selectedEvent, handleEventSelect]);
 
   useEffect(() => {
-    fetchData();
+    fetchEvents();
 
-    const { user } = JSON.parse(localStorage.getItem('user') || '{}');
-    const guardId = user?.id || user?._id;
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const guardId = userData.id || userData._id;
 
     const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
     
@@ -74,72 +82,106 @@ const NotificationDashboard = () => {
       socket.emit('join', guardId);
     }
 
-    socket.on('new-elephant-alert', (newAlert) => {
-      setAlerts(prev => [newAlert, ...prev]);
-      toast('Operational update: New alert broadcasted', { icon: '📢' });
+    socket.on('new-elephant-alert', () => {
+      fetchEvents();
+      toast('Operational update: New tracking event', { icon: '📡' });
     });
 
-    socket.on('alert-updated', (updatedAlert) => {
-      setAlerts(prev => prev.map(a => (a.id || a._id) === (updatedAlert.id || updatedAlert._id) ? updatedAlert : a));
-      if (selectedAlert && (selectedAlert.id || selectedAlert._id) === (updatedAlert.id || updatedAlert._id)) {
-        setSelectedAlert(updatedAlert);
-      }
-    });
-
-    socket.on('delivery-updated', (updatedDelivery) => {
-      setNotifications(prev => prev.map(n => n._id === updatedDelivery._id ? updatedDelivery : n));
+    socket.on('delivery-updated', (updated) => {
+      // Use setDeliveries with function to avoid closure stale state issues
+      setDeliveries(prev => {
+        const index = prev.findIndex(d => d._id === updated._id);
+        if (index !== -1) {
+           const newDeliveries = [...prev];
+           newDeliveries[index] = updated;
+           return newDeliveries;
+        }
+        return prev;
+      });
+      // Optionally refetch summary if needed, but the delivery list update is key
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [fetchEvents]);
 
-  const handleAlertSelect = (alert) => {
-    setSelectedAlert(alert);
-    fetchNotifications(alert.id || alert._id);
+  const handleGenerateMissing = async () => {
+    if (!selectedEvent) return;
+    setIsProcessing(true);
+    try {
+      toast.loading('Generating operational records...', { id: 'gen' });
+      const { data } = await api.post(`/deliveries/${selectedEvent.alertId}/generate`);
+      if (data && data.success) {
+        toast.success(data.message || 'Records initialized', { id: 'gen' });
+        fetchDeliveryDetails(selectedEvent.alertId);
+        fetchEvents(); 
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Generation failed', { id: 'gen' });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleResendSingle = async (deliveryId) => {
-    const alertId = selectedAlert?.id || selectedAlert?._id;
-    if (!alertId) return;
+    if (!selectedEvent) return;
     try {
-      toast.loading('Resending notification...', { id: 'resend' });
-      await api.post(`/alerts/${alertId}/notifications/${deliveryId}/resend`);
-      toast.success('Notification resent', { id: 'resend' });
-      fetchNotifications(alertId); 
+      toast.loading('Initiating retransmission...', { id: 'resend' });
+      const { data } = await api.post(`/deliveries/${selectedEvent.alertId}/resend/${deliveryId}`);
+      if (data && data.success) {
+        toast.success('Notification dispatched', { id: 'resend' });
+        fetchDeliveryDetails(selectedEvent.alertId);
+      }
     } catch (error) {
-      toast.error('Resend failed', { id: 'resend' });
+      toast.error(error.response?.data?.message || 'Resend failed', { id: 'resend' });
     }
   };
 
   const handleResendAllFailed = async () => {
-    const alertId = selectedAlert?.id || selectedAlert?._id;
-    if (!alertId) return;
-    if (!window.confirm('Resend all failed notifications for this alert?')) return;
+    if (!selectedEvent) return;
+    if (!window.confirm('Attempt retransmission for all failed and unsent recipients?')) return;
     
-    setIsResending(true);
+    setIsProcessing(true);
     try {
-      toast.loading('Resending all failed...', { id: 'resend-all' });
-      await api.post(`/alerts/${alertId}/notifications/resend-failed`);
-      toast.success('Retransmission sequence complete', { id: 'resend-all' });
-      fetchNotifications(alertId);
+      toast.loading('Broadcasting recovery signals...', { id: 'resend-all' });
+      const { data } = await api.post(`/deliveries/${selectedEvent.alertId}/resend-failed`);
+      if (data && data.success) {
+        toast.success(`Processed ${data.processed || 0} recoveries`, { id: 'resend-all' });
+        fetchDeliveryDetails(selectedEvent.alertId);
+      }
     } catch (error) {
-      toast.error('Bulk resend failed', { id: 'resend-all' });
+      toast.error('Bulk recovery failed', { id: 'resend-all' });
     } finally {
-      setIsResending(false);
+      setIsProcessing(false);
     }
   };
 
-  const filteredNotifications = notifications.filter(n => {
-    const matchesSearch = (n.residentName || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || n.status === statusFilter;
-    return matchesSearch && matchesStatus;
+  const filteredDeliveries = deliveries.filter(d => {
+    const s = searchTerm.toLowerCase();
+    const nameMatch = String(d.residentName || '').toLowerCase().includes(s);
+    const phoneMatch = String(d.phone || '').toLowerCase().includes(s);
+    const idMatch = String(d.telegramChatId || '').toLowerCase().includes(s);
+    
+    let statusMatch = false;
+    if (statusFilter === 'all') {
+      statusMatch = true;
+    } else if (statusFilter === 'pending') {
+      statusMatch = d.status === 'pending' || d.status === 'retrying';
+    } else {
+      statusMatch = d.status === statusFilter;
+    }
+    
+    return (nameMatch || phoneMatch || idMatch) && statusMatch;
   });
 
-  const stats = {
-    total: notifications.length || 0,
-    sent: notifications.filter(n => n.status === 'sent').length || 0,
-    failed: notifications.filter(n => n.status === 'failed').length || 0,
-    pending: notifications.filter(n => n.status === 'pending').length || 0
+  const getEmptyMessage = () => {
+    if (searchTerm) return `No records matching "${searchTerm}"`;
+    switch(statusFilter) {
+      case 'sent': return 'No successful deliveries found for this event.';
+      case 'failed': return 'No failed delivery records found.';
+      case 'not_sent': return 'No unsent records (missing chat IDs) for this event.';
+      case 'pending': return 'No pending or retrying transmissions found.';
+      default: return 'No residents were within the geofence radius for this event.';
+    }
   };
 
   return (
@@ -151,99 +193,119 @@ const NotificationDashboard = () => {
              <Send className="text-primary-600" size={28} />
              Delivery <span className="text-primary-600">Tracking</span>
           </h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Monitor resident notification status and delivery reports</p>
+          <p className="text-slate-500 text-sm font-medium mt-1">Real-time confirmation of resident notification relays</p>
         </div>
         <div className="flex items-center gap-3">
-          {stats.failed > 0 && (
+          {(summary?.failed > 0 || summary?.notSent > 0) && (
             <button 
               onClick={handleResendAllFailed}
-              disabled={isResending}
+              disabled={isProcessing}
               className="btn btn-danger px-5 text-xs font-bold uppercase tracking-wider"
             >
-              <RotateCcw size={14} className={isResending ? 'animate-spin' : ''} />
-              Retry Failed ({stats.failed})
+              <RotateCcw size={14} className={isProcessing ? 'animate-spin' : ''} />
+              Retry Failed ({summary.failed + summary.notSent})
             </button>
           )}
           <button 
-            onClick={() => selectedAlert && fetchNotifications(selectedAlert.id || selectedAlert._id)}
+            onClick={fetchEvents}
             className="p-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-primary-50 hover:text-primary-600 transition-all shadow-sm"
           >
-            <RefreshCw size={18} className={isNotificationsLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Left Panel: Alerts List */}
+        {/* Left Panel: Operational Events */}
         <div className="lg:col-span-4 space-y-8">
-          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-soft flex flex-col max-h-[650px] overflow-hidden">
-            <div className="p-6 border-b border-slate-100">
-               <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Recent Operational Events</h2>
+          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-soft flex flex-col max-h-[700px] overflow-hidden">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+               <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Tactical Log</h2>
+               <span className="text-[9px] font-black bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">{events.length} Events</span>
             </div>
             <div className="p-4 space-y-2 overflow-y-auto pr-2 custom-scrollbar flex-1">
               {isLoading ? (
-                Array(5).fill(0).map((_, i) => <div key={i} className="h-16 bg-slate-50 animate-pulse rounded-xl"></div>)
-              ) : alerts.length === 0 ? (
-                <p className="text-center py-10 text-slate-300 font-bold uppercase text-[10px]">No events recorded</p>
+                Array(5).fill(0).map((_, i) => <div key={i} className="h-20 bg-slate-50 animate-pulse rounded-xl"></div>)
+              ) : events.length === 0 ? (
+                <div className="py-20 text-center space-y-3">
+                   <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto text-slate-200 border border-slate-100">
+                      <Activity size={24} />
+                   </div>
+                   <p className="text-slate-300 font-bold uppercase text-[10px] tracking-widest">No active deployments</p>
+                </div>
               ) : (
-                alerts.map(alert => (
+                events.map(event => (
                   <button
-                    key={alert.id || alert._id}
-                    onClick={() => handleAlertSelect(alert)}
+                    key={event.alertId}
+                    onClick={() => handleEventSelect(event)}
                     className={`w-full p-4 rounded-xl border transition-all text-left flex items-center gap-4 group ${
-                      (selectedAlert?.id === alert.id || selectedAlert?._id === alert._id)
+                      selectedEvent?.alertId === event.alertId
                         ? 'bg-primary-50 border-primary-200 text-primary-900 shadow-sm'
                         : 'bg-white border-transparent text-slate-600 hover:bg-slate-50'
                     }`}
                   >
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                      (selectedAlert?.id === alert.id || selectedAlert?._id === alert._id)
+                      selectedEvent?.alertId === event.alertId
                         ? 'bg-primary-600 text-white'
                         : 'bg-slate-100 text-slate-400 group-hover:bg-primary-100 group-hover:text-primary-600'
                     }`}>
                       <AlertTriangle size={18} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-bold tracking-tight truncate ${
-                        (selectedAlert?.id === alert.id || selectedAlert?._id === alert._id) ? 'text-primary-900' : 'text-slate-900'
-                      }`}>
-                        {alert.locationName || alert.location?.locationName}
-                      </p>
+                      <div className="flex justify-between items-start gap-2">
+                        <p className={`text-sm font-bold tracking-tight truncate ${
+                          selectedEvent?.alertId === event.alertId ? 'text-primary-900' : 'text-slate-900'
+                        }`}>
+                          {event.locationName || 'Unknown'}
+                        </p>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                          event.summary?.sent === event.summary?.total && event.summary?.total > 0
+                            ? 'bg-success-100 text-success-700'
+                            : (event.summary?.failed > 0 || event.summary?.notSent > 0)
+                            ? 'bg-danger-100 text-danger-700'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {event.summary?.sent || 0}/{event.summary?.total || 0}
+                        </span>
+                      </div>
                       <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${
-                        (selectedAlert?.id === alert.id || selectedAlert?._id === alert._id) ? 'text-primary-600/70' : 'text-slate-400'
+                        selectedEvent?.alertId === event.alertId ? 'text-primary-600/70' : 'text-slate-400'
                       }`}>
-                        {safeFormat(alert.detectedAt, 'MMM dd, HH:mm')}
+                        {safeFormat(event.detectedAt, 'MMM dd, HH:mm')}
                       </p>
                     </div>
-                    <ChevronRight size={14} className={(selectedAlert?.id === alert.id || selectedAlert?._id === alert._id) ? 'text-primary-600' : 'text-slate-300'} />
                   </button>
                 ))
               )}
             </div>
           </div>
 
-          {selectedAlert && (
+          {selectedEvent && (
             <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-soft relative overflow-hidden group">
               <div className="relative z-10 space-y-6">
                 <div className="flex items-center gap-3">
                    <div className="w-9 h-9 bg-primary-50 rounded-xl flex items-center justify-center border border-primary-100">
                      <ShieldAlert size={18} className="text-primary-600" />
                    </div>
-                   <h3 className="font-bold text-slate-900 text-sm">Detection Intel</h3>
+                   <h3 className="font-bold text-slate-900 text-sm tracking-tight">Intelligence Specs</h3>
                 </div>
                 <div className="space-y-4">
                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-slate-400 font-bold uppercase tracking-widest">AI Confidence</span>
-                      <span className="font-bold text-primary-600">{(selectedAlert.confidence * 100).toFixed(0)}%</span>
+                      <span className="text-slate-400 font-bold uppercase tracking-widest">Neural Accuracy</span>
+                      <span className="font-bold text-primary-600">{(selectedEvent.confidence * 100).toFixed(0)}%</span>
                    </div>
                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden p-0.5">
-                      <div className="bg-primary-500 h-full rounded-full transition-all duration-1000 shadow-sm" style={{ width: `${selectedAlert.confidence * 100}%` }}></div>
+                      <div className="bg-primary-500 h-full rounded-full transition-all duration-1000 shadow-sm" style={{ width: `${selectedEvent.confidence * 100}%` }}></div>
                    </div>
-                   <div className="flex items-center gap-2 pt-1">
-                      <MapPin size={12} className="text-slate-400" />
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">
-                        {selectedAlert.locationName || 'Unknown Sector'}
-                      </span>
+                   <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Deployment</p>
+                        <p className="text-xs font-bold text-slate-700">LVL 4 Protocol</p>
+                      </div>
+                      <div className="space-y-1 text-right">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Signal</p>
+                        <p className="text-xs font-bold text-success-600">Encrypted</p>
+                      </div>
                    </div>
                 </div>
               </div>
@@ -254,154 +316,169 @@ const NotificationDashboard = () => {
 
         {/* Right Panel: Delivery Details */}
         <div className="lg:col-span-8 space-y-8">
-          {selectedAlert ? (
+          {selectedEvent ? (
             <>
               {/* Summary Stats */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 px-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 px-1">
                 {[
-                  { label: 'Total Relay', count: stats.total, color: 'text-slate-900', bg: 'bg-white', icon: <User /> },
-                  { label: 'Successful', count: stats.sent, color: 'text-success-600', bg: 'bg-white', icon: <CheckCircle /> },
-                  { label: 'Failed', count: stats.failed, color: 'text-danger-600', bg: 'bg-white', icon: <XCircle /> },
-                  { label: 'Pending', count: stats.pending, color: 'text-warning-600', bg: 'bg-white', icon: <Clock /> },
+                  { label: 'Total Relay', count: summary?.total || 0, color: 'text-slate-900', icon: <User /> },
+                  { label: 'Successful', count: summary?.sent || 0, color: 'text-success-600', icon: <CheckCircle /> },
+                  { label: 'Failed', count: summary?.failed || 0, color: 'text-danger-600', icon: <XCircle /> },
+                  { label: 'Unsent', count: summary?.notSent || 0, color: 'text-rose-400', icon: <Info /> },
+                  { label: 'Pending', count: summary?.pending || 0, color: 'text-warning-600', icon: <Clock /> },
                 ].map((stat, i) => (
-                  <div key={i} className={`${stat.bg} p-6 rounded-3xl border border-slate-200 shadow-soft flex flex-col gap-4 group hover:border-primary-100 transition-all`}>
-                    <div className={`w-9 h-9 ${stat.color} flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors`}>
-                      {React.cloneElement(stat.icon, { size: 18 })}
+                  <div key={i} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-soft flex flex-col gap-3 group hover:border-primary-100 transition-all">
+                    <div className={`w-8 h-8 ${stat.color} flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors`}>
+                      {React.cloneElement(stat.icon, { size: 16 })}
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-                      <h3 className={`text-2xl font-bold ${stat.color} tracking-tight`}>{stat.count}</h3>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">{stat.label}</p>
+                      <h3 className={`text-xl font-bold ${stat.color} tracking-tight`}>{stat.count}</h3>
                     </div>
                   </div>
                 ))}
               </div>
 
               {/* Data Table */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-soft overflow-hidden flex flex-col min-h-[500px]">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-soft overflow-hidden flex flex-col min-h-[550px]">
                 <div className="p-6 border-b border-slate-100 flex flex-col xl:flex-row gap-6 justify-between items-center bg-slate-50/50">
                    <div className="relative flex-1 w-full">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                       <input 
                         type="text" 
-                        placeholder="Search residents..." 
+                        placeholder="Filter by name, phone or Telegram ID..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="input pl-11 bg-white"
                       />
                    </div>
-                   <div className="flex items-center gap-1.5 overflow-x-auto w-full xl:w-auto pb-2 xl:pb-0">
-                      {['all', 'sent', 'failed', 'pending'].map(status => (
+                   <div className="flex items-center gap-1 overflow-x-auto w-full xl:w-auto pb-2 xl:pb-0">
+                      {[
+                        { id: 'all', label: 'All' },
+                        { id: 'sent', label: 'Sent' },
+                        { id: 'failed', label: 'Failed' },
+                        { id: 'not_sent', label: 'Not Sent' },
+                        { id: 'pending', label: 'Pending' }
+                      ].map(filter => (
                         <button
-                          key={status}
-                          onClick={() => setStatusFilter(status)}
-                          className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all shrink-0 ${
-                            statusFilter === status 
-                              ? 'bg-primary-600 text-white shadow-lg shadow-primary-200' 
+                          key={filter.id}
+                          onClick={() => setStatusFilter(filter.id)}
+                          className={`px-3 py-1.5 rounded-lg font-bold text-[9px] uppercase tracking-widest transition-all shrink-0 ${
+                            statusFilter === filter.id 
+                              ? 'bg-primary-600 text-white shadow-md' 
                               : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
                           }`}
                         >
-                          {status}
+                          {filter.label}
                         </button>
                       ))}
                    </div>
                 </div>
 
                 <div className="flex-1 overflow-x-auto">
-                  {isNotificationsLoading ? (
-                    <div className="h-full flex flex-col items-center justify-center py-20 space-y-4">
+                  {isDetailsLoading ? (
+                    <div className="h-full flex flex-col items-center justify-center py-24 space-y-4">
                        <div className="w-10 h-10 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin"></div>
-                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Syncing logs...</p>
+                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Syncing operational data...</p>
                     </div>
-                  ) : filteredNotifications.length === 0 ? (
+                  ) : deliveries.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center py-32 space-y-6">
+                       <div className="w-20 h-20 bg-slate-50 text-slate-200 rounded-3xl flex items-center justify-center border border-slate-100">
+                          <ShieldAlert size={40} />
+                       </div>
+                       <div className="text-center space-y-1 px-8">
+                          <p className="text-base font-bold text-slate-900">Zero Delivery Footprint</p>
+                          <p className="text-xs text-slate-400 font-medium max-w-xs mx-auto">No residents were within the geofence radius for this event, or tracking records have not been initialized.</p>
+                       </div>
+                       <button 
+                         onClick={handleGenerateMissing}
+                         disabled={isProcessing}
+                         className="btn btn-primary px-8 py-3 rounded-2xl shadow-lg shadow-primary-200 font-black text-[10px] uppercase tracking-[0.2em]"
+                       >
+                         {isProcessing ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />}
+                         Initialize Records
+                       </button>
+                    </div>
+                  ) : filteredDeliveries.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center py-32 space-y-4">
-                       <div className="w-16 h-16 bg-slate-50 text-slate-200 rounded-3xl flex items-center justify-center border border-slate-100">
-                          <Info size={32} />
+                       <div className="w-16 h-16 bg-slate-50 text-slate-200 rounded-full flex items-center justify-center">
+                          <Search size={32} />
                        </div>
-                       <div className="text-center">
-                          <p className="text-sm font-bold text-slate-900">No records found</p>
-                          <p className="text-xs text-slate-400 font-medium mt-1">Try adjusting your filters</p>
-                       </div>
+                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{getEmptyMessage()}</p>
                     </div>
                   ) : (
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-100">
-                          <th className="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Resident</th>
-                          <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Distance</th>
-                          <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
-                          <th className="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Activity</th>
+                          <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">Resident Node</th>
+                          <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] text-center">Telemetry</th>
+                          <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">Relay Status</th>
+                          <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] text-right">Operational Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredNotifications.map((n) => (
-                          <tr key={n._id} className="hover:bg-slate-50/50 transition-colors group">
+                        {filteredDeliveries.map((d) => (
+                          <tr key={d._id} className="hover:bg-slate-50/50 transition-colors group">
                             <td className="px-8 py-5">
                                <div className="flex items-center gap-4">
-                                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center shadow-sm border ${
-                                    n.status === 'sent' ? 'bg-success-50 text-success-600 border-success-100' : 
-                                    n.status === 'failed' ? 'bg-danger-50 text-danger-600 border-danger-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-sm border ${
+                                    d.status === 'sent' ? 'bg-success-50 text-success-600 border-success-100' : 
+                                    (d.status === 'failed' || d.status === 'not_sent') ? 'bg-danger-50 text-danger-600 border-danger-100' : 'bg-amber-50 text-amber-600 border-amber-100'
                                   }`}>
                                     <User size={16} />
                                   </div>
                                   <div>
-                                     <p className="font-bold text-slate-900 text-sm tracking-tight">{n.residentName}</p>
-                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">ID: {n.telegramChatId}</p>
+                                     <p className="font-bold text-slate-900 text-sm tracking-tight">{d.residentName}</p>
+                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                                       {d.telegramChatId === 'NOT_SET' ? 'Bot Not Started' : `TG: ${d.telegramChatId}`}
+                                     </p>
                                   </div>
                                </div>
                             </td>
                             <td className="px-6 py-5 text-center">
-                               <span className="px-2.5 py-1 bg-slate-100 rounded-lg text-[10px] font-mono font-bold text-slate-600">
-                                 {((n.distanceFromElephant || 0) / 1000).toFixed(2)} km
-                               </span>
+                               <div className="inline-flex flex-col items-center">
+                                  <span className="text-[10px] font-mono font-black text-slate-600">
+                                    {((d.distanceFromElephant || 0) / 1000).toFixed(2)} km
+                                  </span>
+                                  <div className="w-8 h-0.5 bg-slate-100 mt-1"></div>
+                               </div>
                             </td>
                             <td className="px-6 py-5">
                                <div className="flex flex-col gap-1.5">
-                                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider w-fit border ${
-                                    n.status === 'sent' ? 'badge-success border-success-100' : 
-                                    n.status === 'failed' ? 'badge-danger border-danger-100' : 'badge-warning border-warning-100'
+                                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider w-fit border ${
+                                    d.status === 'sent' ? 'bg-success-50 text-success-700 border-success-100' : 
+                                    (d.status === 'failed' || d.status === 'not_sent') ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-amber-50 text-amber-700 border-amber-100'
                                   }`}>
-                                    {n.status === 'sent' ? <CheckCircle size={10} /> : 
-                                     n.status === 'failed' ? <XCircle size={10} /> : <Clock size={10} />}
-                                    {n.status}
+                                    {d.status === 'sent' ? <CheckCircle size={10} /> : 
+                                     (d.status === 'failed' || d.status === 'not_sent') ? <XCircle size={10} /> : <Clock size={10} />}
+                                    {(d.status || '').replace('_', ' ')}
                                   </div>
-                                  {(n.retryCount > 0 || n.errorMessage) && (
-                                    <div className="space-y-0.5 px-1">
-                                      {n.retryCount > 0 && (
-                                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                          <RotateCcw size={8} /> {n.retryCount} Retries
-                                        </p>
-                                      )}
-                                      {n.errorMessage && (
-                                        <p className="text-[8px] text-danger-500 font-bold max-w-[140px] truncate" title={n.errorMessage}>
-                                          Error: {n.errorMessage}
-                                        </p>
-                                      )}
-                                    </div>
+                                  {d.errorMessage && d.status !== 'sent' && (
+                                    <p className="text-[8px] text-rose-500 font-bold max-w-[140px] truncate ml-1" title={d.errorMessage}>
+                                      LOG: {d.errorMessage}
+                                    </p>
                                   )}
-                               </div>
+                                </div>
                             </td>
                             <td className="px-8 py-5 text-right">
-                               {n.status === 'failed' ? (
-                                 <button 
-                                   onClick={() => handleResendSingle(n._id)}
-                                   className="px-3.5 py-2 bg-slate-900 text-white rounded-lg hover:bg-primary-600 transition-all shadow-md flex items-center gap-2 font-bold text-[9px] uppercase tracking-widest ml-auto active:scale-95"
-                                 >
-                                   <Send size={10} /> Retry
-                                 </button>
-                               ) : n.status === 'sent' ? (
+                               {d.status === 'sent' ? (
                                  <div className="text-right">
-                                    <p className="text-xs font-bold text-slate-800 tracking-tight">
-                                      {safeFormat(n.sentAt, 'HH:mm:ss')}
+                                    <p className="text-xs font-black text-slate-700 tracking-tight">
+                                      {safeFormat(d.sentAt, 'HH:mm:ss')}
                                     </p>
-                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                                      {n.sentAt ? safeFormat(n.sentAt, 'MMM dd') : '--'}
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                      CONFIRMED
                                     </p>
                                  </div>
                                ) : (
-                                 <div className="flex items-center gap-2 justify-end text-amber-600 animate-pulse">
-                                    <Activity size={14} />
-                                    <span className="text-[9px] font-bold uppercase tracking-widest">Pending</span>
-                                 </div>
+                                 <button 
+                                   onClick={() => handleResendSingle(d._id)}
+                                   disabled={d.status === 'retrying'}
+                                   className="px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-primary-600 transition-all shadow-md flex items-center gap-2 font-black text-[9px] uppercase tracking-widest ml-auto active:scale-95 disabled:opacity-50"
+                                 >
+                                   {d.status === 'retrying' ? <RefreshCw className="animate-spin" size={10} /> : <RotateCcw size={10} />}
+                                   {d.status === 'not_sent' ? 'Transmit' : 'Retry'}
+                                 </button>
                                )}
                             </td>
                           </tr>
@@ -413,13 +490,13 @@ const NotificationDashboard = () => {
               </div>
             </>
           ) : (
-            <div className="h-[60vh] flex flex-col items-center justify-center space-y-6">
-              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center text-slate-100 shadow-soft border border-slate-100 group hover:border-primary-100 transition-all duration-500">
-                 <ShieldAlert size={48} className="group-hover:text-primary-400 transition-colors duration-500" />
+            <div className="h-[70vh] flex flex-col items-center justify-center space-y-8 px-6">
+              <div className="w-28 h-28 bg-white rounded-[2.5rem] flex items-center justify-center text-slate-100 shadow-soft border border-slate-100 group hover:border-primary-100 transition-all duration-700">
+                 <ShieldAlert size={56} className="group-hover:text-primary-400 transition-colors duration-700" />
               </div>
-              <div className="text-center space-y-1">
-                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Select an Event</h2>
-                 <p className="text-slate-400 text-xs font-medium max-w-sm mx-auto">Select a detection event from the list to view detailed notification delivery status.</p>
+              <div className="text-center space-y-2">
+                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Operational Command</h2>
+                 <p className="text-slate-400 text-sm font-medium max-w-xs mx-auto leading-relaxed">Select an active deployment from the tactical log to verify resident notification status.</p>
               </div>
             </div>
           )}

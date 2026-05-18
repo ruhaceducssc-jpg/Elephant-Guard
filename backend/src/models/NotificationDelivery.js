@@ -15,13 +15,16 @@ const notificationDeliverySchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  phone: {
+    type: String,
+  },
   telegramChatId: {
     type: String,
     required: true,
   },
   status: {
     type: String,
-    enum: ['pending', 'sent', 'failed'],
+    enum: ['pending', 'sent', 'failed', 'not_sent', 'retrying'],
     default: 'pending',
   },
   sentAt: {

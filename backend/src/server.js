@@ -37,6 +37,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/guards', require('./routes/guardRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/alerts', require('./routes/alertRoutes'));
+app.use('/api/deliveries', require('./routes/deliveryRoutes'));
 
 // Root route
 app.get('/', (req, res) => {
