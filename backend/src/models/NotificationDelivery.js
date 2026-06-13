@@ -6,46 +6,78 @@ const notificationDeliverySchema = new mongoose.Schema({
     ref: 'Alert',
     required: true,
   },
+  detectionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Detection',
+    required: true,
+  },
+  guardId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Guard',
+    required: true,
+  },
   residentId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
   },
-  residentName: {
+  notificationStatus: {
     type: String,
-    required: true,
+    enum: ['pending', 'sent', 'failed', 'not_sent', 'retrying'],
+    default: 'pending',
   },
-  phone: {
-    type: String,
+  residentResponse: {
+    status: {
+      type: String,
+      enum: ['pending', 'protected', 'cannot_protect', 'help_requested'],
+      default: 'pending',
+    },
+    respondedAt: Date,
+    telegramUserId: String,
+    telegramChatId: String,
+  },
+  guardAssessment: {
+    status: {
+      type: String,
+      enum: ['pending', 'protected', 'attacked', 'help_requested'],
+      default: 'pending',
+    },
+    guardId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Guard',
+    },
+    updatedAt: Date,
+    note: {
+      type: String,
+      default: '',
+    },
   },
   telegramChatId: {
     type: String,
     required: true,
   },
-  status: {
+  telegramMessageId: {
     type: String,
-    enum: ['pending', 'sent', 'failed', 'not_sent', 'retrying'],
-    default: 'pending',
   },
-  sentAt: {
-    type: Date,
-  },
-  errorMessage: {
-    type: String,
-    default: '',
-  },
-  retryCount: {
+  distanceToDetectionMeters: {
     type: Number,
-    default: 0,
-  },
-  lastRetryAt: {
-    type: Date,
-  },
-  distanceFromElephant: {
-    type: Number, // in meters
     required: true,
   },
-  residentRadiusMeters: {
+  residentSnapshot: {
+    name: String,
+    phone: String,
+    telegramChatId: String,
+    village: String,
+    location: {
+      type: {
+        type: String,
+        enum: ['Point'],
+      },
+      coordinates: [Number],
+    },
+    geofenceRadiusMeters: Number,
+  },
+  residentGeofenceRadiusMeters: {
     type: Number,
   },
   insideGuardArea: {
@@ -56,11 +88,13 @@ const notificationDeliverySchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  eligible: {
-    type: Boolean,
-    default: false,
+  sentAt: {
+    type: Date,
   },
-  reason: {
+  failedAt: {
+    type: Date,
+  },
+  errorMessage: {
     type: String,
     default: '',
   },
@@ -68,8 +102,8 @@ const notificationDeliverySchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Index for quick lookups
-notificationDeliverySchema.index({ alertId: 1 });
+notificationDeliverySchema.index({ alertId: 1, residentId: 1 }, { unique: true });
+notificationDeliverySchema.index({ detectionId: 1 });
 notificationDeliverySchema.index({ residentId: 1 });
 
 module.exports = mongoose.model('NotificationDelivery', notificationDeliverySchema);

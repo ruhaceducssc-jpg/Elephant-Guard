@@ -31,9 +31,22 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     const { data } = await api.post('/auth/register', userData);
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data));
-    setUser(data);
+    // Registration now initiates OTP flow, doesn't return token/user immediately
+    return data;
+  };
+
+  const verifyOtp = async (verificationData) => {
+    const { data } = await api.post('/auth/verify-otp', verificationData);
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data));
+      setUser(data);
+    }
+    return data;
+  };
+
+  const resendOtp = async (verificationSessionId) => {
+    const { data } = await api.post('/auth/resend-otp', { verificationSessionId });
     return data;
   };
 

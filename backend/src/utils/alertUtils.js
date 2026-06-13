@@ -1,33 +1,46 @@
 /**
- * Normalizes an alert object for frontend and telegram consumption
- * @param {object} alert - The Mongoose alert document or object
- * @returns {object} - Normalized alert object
+ * Normalizes a detection object for frontend consumption
+ * @param {object} detection - The Mongoose detection document or object
+ * @returns {object} - Normalized detection object
+ */
+const normalizeDetection = (detection) => {
+  if (!detection) return null;
+  
+  const detObj = typeof detection.toObject === 'function' ? detection.toObject() : detection;
+  
+  const longitude = detObj.location?.coordinates ? detObj.location.coordinates[0] : 0;
+  const latitude = detObj.location?.coordinates ? detObj.location.coordinates[1] : 0;
+  const locationName = detObj.locationName || 'Unknown Location';
+
+  return {
+    ...detObj,
+    id: detObj._id.toString(),
+    _id: detObj._id.toString(),
+    latitude,
+    longitude,
+    locationName,
+    confidence: detObj.confidence || 0,
+    detectedAt: detObj.detectedAt || detObj.createdAt,
+    image: detObj.imageUrl || detObj.image || '',
+    status: detObj.status || 'active',
+    clearedAt: detObj.clearedAt,
+    clearedBy: detObj.clearedBy,
+    clearedByGuardId: detObj.clearedByGuardId,
+    clearReason: detObj.clearReason,
+    statusHistory: detObj.statusHistory || []
+  };
+};
+
+/**
+ * Normalizes an alert object for frontend consumption
  */
 const normalizeAlert = (alert) => {
   if (!alert) return null;
-  
   const alertObj = typeof alert.toObject === 'function' ? alert.toObject() : alert;
-  
-  // Ensure we have coordinates even if nested in GeoJSON
-  const longitude = alertObj.location?.coordinates ? alertObj.location.coordinates[0] : (alertObj.longitude || 0);
-  const latitude = alertObj.location?.coordinates ? alertObj.location.coordinates[1] : (alertObj.latitude || 0);
-  
-  const locationName = alertObj.location?.locationName || alertObj.locationName || alertObj.areaName || 'Unknown Location';
-
   return {
     ...alertObj,
-    id: alertObj._id || alertObj.id,
-    _id: alertObj._id || alertObj.id,
-    latitude,
-    longitude,
-    areaName: locationName,
-    locationName: locationName,
-    // Ensure nested fields are accessible
-    confidence: alertObj.confidence || 0,
-    insidePatrolArea: alertObj.insidePatrolArea || false,
-    alertStatus: alertObj.alertStatus || 'new',
-    detectedAt: alertObj.detectedAt || alertObj.createdAt,
-    image: alertObj.image || '',
+    id: alertObj._id.toString(),
+    _id: alertObj._id.toString()
   };
 };
 
@@ -63,9 +76,7 @@ const isPointInPolygon = (point, polygon) => {
 };
 
 /**
- * Evaluates whether a resident is eligible for an alert based on combined conditions
- * @param {Object} params - Evaluation parameters
- * @returns {Object} - Detailed eligibility result
+ * Evaluates whether a resident is eligible for an alert
  */
 const evaluateAlertEligibility = ({ elephantLocation, guardPatrolArea, resident }) => {
   const [lng, lat] = elephantLocation.coordinates;
@@ -144,6 +155,7 @@ const evaluateAlertEligibility = ({ elephantLocation, guardPatrolArea, resident 
 };
 
 module.exports = {
+  normalizeDetection,
   normalizeAlert,
   isPointInPolygon,
   evaluateAlertEligibility

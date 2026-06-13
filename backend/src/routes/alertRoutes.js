@@ -5,12 +5,10 @@ const {
   getAlerts,
   getAlertById,
   deleteAlert,
+  clearAlert,
   updateAlertStatus,
-  updateAlertNotes,
-  getAlertNotifications,
-  getAllNotifications,
+  getDetectionResidents,
   resendNotification,
-  resendAllFailedNotifications,
   testNotification,
 } = require('../controllers/alertController');
 const { protect } = require('../middleware/auth');
@@ -20,16 +18,16 @@ router.route('/')
   .post(protect, upload.single('image'), createAlert)
   .get(protect, getAlerts);
 
-router.get('/notifications', protect, getAllNotifications);
 router.post('/notifications/test', protect, testNotification);
-router.post('/:id/notifications/resend-failed', protect, resendAllFailedNotifications);
-router.post('/:id/notifications/:deliveryId/resend', protect, resendNotification);
-router.get('/:id/notifications', protect, getAlertNotifications);
+router.post('/notifications/:deliveryId/resend', protect, resendNotification);
+
+// Detection Specifics
+router.get('/:id/residents', protect, getDetectionResidents);
+router.patch('/:id/clear', protect, clearAlert);
 router.patch('/:id/status', protect, updateAlertStatus);
-router.patch('/:id/notes', protect, updateAlertNotes);
 
 router.route('/:id')
-  .get(getAlertById)
+  .get(protect, getAlertById)
   .delete(protect, deleteAlert);
 
 module.exports = router;

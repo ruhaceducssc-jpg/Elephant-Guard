@@ -1,296 +1,257 @@
 const User = require('../models/User');
 const Guard = require('../models/Guard');
+const Detection = require('../models/Detection');
 const Alert = require('../models/Alert');
 const NotificationDelivery = require('../models/NotificationDelivery');
 const { sendAlert } = require('./telegramService');
-const { calculateDistance } = require('./geocodingService');
-const { normalizeAlert, isPointInPolygon, evaluateAlertEligibility } = require('../utils/alertUtils');
+const { isPointInPolygon, evaluateAlertEligibility, normalizeDetection, normalizeAlert } = require('../utils/alertUtils');
 
 /**
- * Triggers notifications for an alert
- * @param {object} alert - The alert document
+ * Triggers notifications for a detection
+ * @param {object} detection - The detection document
  * @param {object} io - Socket.io instance
  */
-const triggerAlertNotifications = async (alert, io) => {
-  console.log(`--- [Notification Service] Starting trigger for Alert ${alert._id} ---`);
+const triggerAlertNotifications = async (detection, io) => {
+  console.log(`--- [Notification Service] Starting trigger for Detection ${detection._id} ---`);
   
-  const normalizedAlert = normalizeAlert(alert);
-
   try {
-    // 1. Identify detecting guard and their patrol area
-    const detectingGuard = await Guard.findById(alert.detectedBy);
+    // 1. Identify detecting guard
+    const detectingGuard = await Guard.findById(detection.guardId);
     if (!detectingGuard) {
-      console.error('Detecting guard not found for alert');
-      await Alert.findByIdAndUpdate(alert._id, { 
-        notificationStatus: 'none',
-        eligibilityReason: 'detecting_guard_not_found'
-      });
+      console.error('Detecting guard not found for detection');
       return { success: false, error: 'Detecting guard not found' };
     }
 
-    if (!detectingGuard.patrolArea || !detectingGuard.patrolArea.coordinates) {
-      console.log(`Guard ${detectingGuard.name} has no patrol area configured. Skipping notifications.`);
-      await Alert.findByIdAndUpdate(alert._id, { 
-        notificationStatus: 'none',
-        eligibilityReason: 'missing_guard_patrol_area'
+    // 2. Create the Alert record (One-Detection-One-Alert)
+    let alert;
+    try {
+      alert = await Alert.create({
+        detectionId: detection._id,
+        guardId: detection.guardId,
+        location: {
+          type: 'Point',
+          coordinates: [
+            detection.location.coordinates[0],
+            detection.location.coordinates[1]
+          ]
+        },
+        detectedAt: detection.detectedAt,
+        status: 'active'
       });
-      return { success: true, status: 'none', count: 0 };
-    }
-
-    // 2. Check if elephant is inside guard patrol area
-    const [lng, lat] = normalizedAlert.location.coordinates;
-    const insideGuardArea = isPointInPolygon([lng, lat], detectingGuard.patrolArea);
-
-    if (!insideGuardArea) {
-      console.log('Elephant outside guard patrol area. No resident notifications.');
-      await Alert.findByIdAndUpdate(alert._id, { 
-        insidePatrolArea: false,
-        notificationStatus: 'none',
-        eligibilityReason: 'outside_guard_area'
-      });
-      return { success: true, status: 'none', count: 0 };
-    }
-
-    // 3. Find active residents REGISTERED BY THIS GUARD
-    const residents = await User.find({ 
-      registeredBy: alert.detectedBy
-    });
-    
-    // 4. Evaluate eligibility for each resident
-    const affectedResidentIds = [];
-    const eligibleResidents = [];
-
-    for (const resident of residents) {
-      const evaluation = evaluateAlertEligibility({
-        elephantLocation: normalizedAlert.location,
-        guardPatrolArea: detectingGuard.patrolArea,
-        resident
-      });
-
-      const deliveryData = {
-        alertId: alert._id,
-        residentId: resident._id,
-        residentName: resident.name,
-        phone: resident.phone,
-        telegramChatId: resident.telegramChatId || 'NOT_SET',
-        status: evaluation.eligible ? 'pending' : 'not_sent',
-        reason: evaluation.reason,
-        distanceFromElephant: evaluation.distanceToResidentMeters || 0,
-        residentRadiusMeters: evaluation.residentRadiusMeters || resident.geofenceRadiusMeters,
-        insideGuardArea: evaluation.insideGuardArea,
-        insideResidentGeofence: evaluation.insideResidentGeofence,
-        eligible: evaluation.eligible
-      };
-
-      const delivery = await NotificationDelivery.create(deliveryData);
-
-      if (evaluation.eligible) {
-        eligibleResidents.push({ resident, delivery });
-        affectedResidentIds.push(resident._id);
+    } catch (alertError) {
+      if (alertError.code === 11000) {
+        alert = await Alert.findOne({ detectionId: detection._id });
+      } else {
+        throw alertError;
       }
     }
 
-    // 5. Find all guards to notify (Always notify guards regardless of polygon for safety)
-    const guardsToNotify = await Guard.find({ 
-      telegramChatId: { $exists: true, $ne: '' } 
-    });
+    if (!alert) {
+      throw new Error('Failed to create or find related alert');
+    }
 
-    // 6. Send messages and update delivery records
+    // Link alert to detection if not already linked
+    if (!detection.alertId || detection.alertId.toString() !== alert._id.toString()) {
+      detection.alertId = alert._id;
+      await detection.save();
+    }
+
+    // 3. Check if guard has patrol area
+    if (!detectingGuard.patrolArea || !detectingGuard.patrolArea.coordinates) {
+      console.log(`Guard ${detectingGuard.name} has no patrol area. No notifications sent.`);
+      
+      // Still emit socket event so map updates
+      if (io) {
+        io.emit('new-elephant-detection', {
+          detection: normalizeDetection(detection),
+          alert: normalizeAlert(alert)
+        });
+      }
+      
+      return { success: true, status: 'none', count: 0 };
+    }
+
+    // 4. Find active residents registered by this guard
+    const residents = await User.find({ registeredBy: detection.guardId });
+    
+    // 5. Evaluate eligibility and create delivery records
+    let eligibleCount = 0;
+    const eligibleResidents = [];
+
+    for (const resident of residents) {
+      try {
+        const evaluation = evaluateAlertEligibility({
+          elephantLocation: detection.location,
+          guardPatrolArea: detectingGuard.patrolArea,
+          resident
+        });
+
+        // Use upsert-like behavior for deliveries to prevent duplicates
+        const delivery = await NotificationDelivery.findOneAndUpdate(
+          { alertId: alert._id, residentId: resident._id },
+          {
+            detectionId: detection._id,
+            guardId: detection.guardId,
+            notificationStatus: evaluation.eligible ? 'pending' : 'not_sent',
+            safetyStatus: 'pending',
+            telegramChatId: resident.telegramChatId || 'NOT_SET',
+            distanceToDetectionMeters: evaluation.distanceToResidentMeters || 0,
+            residentSnapshot: {
+              name: resident.name,
+              phone: resident.phone,
+              telegramChatId: resident.telegramChatId,
+              village: resident.village,
+              location: resident.areaLocation,
+              geofenceRadiusMeters: resident.geofenceRadiusMeters
+            },
+            residentGeofenceRadiusMeters: evaluation.residentRadiusMeters || resident.geofenceRadiusMeters,
+            insideGuardArea: evaluation.insideGuardArea,
+            insideResidentGeofence: evaluation.insideResidentGeofence,
+            errorMessage: evaluation.eligible ? '' : evaluation.reason
+          },
+          { upsert: true, new: true }
+        );
+
+        if (evaluation.eligible) {
+          eligibleCount++;
+          eligibleResidents.push({ resident, delivery });
+        }
+      } catch (delError) {
+        console.error(`Failed to process resident ${resident._id}:`, delError.message);
+      }
+    }
+
+    // 6. Update Alert counts
+    alert.linkedResidentCount = residents.length;
+    alert.eligibleResidentCount = eligibleCount;
+    await alert.save();
+
+    // 7. Send Telegram messages (Don't let one failure block others)
     let successCount = 0;
     const processedChatIds = new Set();
 
-    // Notify Eligible Residents
     for (const { resident, delivery } of eligibleResidents) {
+      if (!resident.telegramChatId || resident.telegramChatId === 'NOT_SET') {
+        delivery.notificationStatus = 'failed';
+        delivery.errorMessage = 'Missing Telegram Chat ID';
+        await delivery.save();
+        continue;
+      }
+
       if (processedChatIds.has(resident.telegramChatId)) {
-        await NotificationDelivery.findByIdAndUpdate(delivery._id, {
-          status: 'sent',
-          sentAt: new Date(),
-          reason: 'duplicate_chat_id_skipped'
-        });
+        delivery.notificationStatus = 'sent';
+        delivery.sentAt = new Date();
+        delivery.errorMessage = 'duplicate_chat_id_skipped';
+        await delivery.save();
         successCount++;
         continue;
       }
       
-      const result = await sendAlert(resident.telegramChatId, {
-        ...normalizedAlert,
-        distanceFromResident: delivery.distanceFromElephant,
-        residentAreaName: resident.village
-      });
-      
-      if (result.success) {
-        successCount++;
-        processedChatIds.add(resident.telegramChatId);
-        await NotificationDelivery.findByIdAndUpdate(delivery._id, {
-          status: 'sent',
-          sentAt: new Date(),
-          errorMessage: ''
+      try {
+        const result = await sendAlert(resident.telegramChatId, {
+          deliveryId: delivery._id,
+          detectionId: detection._id,
+          residentId: resident._id,
+          areaName: detection.locationName,
+          detectedAt: detection.detectedAt,
+          confidence: detection.confidence,
+          latitude: detection.location.coordinates[1],
+          longitude: detection.location.coordinates[0],
+          distanceFromResident: delivery.distanceToDetectionMeters,
+          residentAreaName: resident.village
         });
-      } else {
-        await NotificationDelivery.findByIdAndUpdate(delivery._id, {
-          status: 'failed',
-          errorMessage: result.error || 'Telegram API Error'
-        });
+        
+        if (result.success) {
+          successCount++;
+          processedChatIds.add(resident.telegramChatId);
+          delivery.notificationStatus = 'sent';
+          delivery.sentAt = new Date();
+          delivery.telegramMessageId = result.messageId;
+        } else {
+          delivery.notificationStatus = 'failed';
+          delivery.failedAt = new Date();
+          delivery.errorMessage = result.error || 'Telegram API Error';
+        }
+        await delivery.save();
+      } catch (telError) {
+        console.error(`Telegram send error for ${resident.name}:`, telError.message);
+        delivery.notificationStatus = 'failed';
+        delivery.errorMessage = telError.message;
+        await delivery.save();
       }
     }
 
-    // Notify Guards
-    for (const guard of guardsToNotify) {
-      if (processedChatIds.has(guard.telegramChatId)) continue;
-      
-      const result = await sendAlert(guard.telegramChatId, normalizedAlert);
-      if (result.success) {
-        processedChatIds.add(guard.telegramChatId);
-      }
+    // 8. Final Alert Summary Update
+    alert.notificationSummary = {
+      sent: successCount,
+      failed: eligibleCount - successCount,
+      pending: 0,
+      not_sent: residents.length - eligibleCount
+    };
+    await alert.save();
+
+    // Emit socket events with normalized data
+    if (io) {
+      const payload = {
+        success: true,
+        detection: normalizeDetection(detection),
+        alert: normalizeAlert(alert)
+      };
+      // Target specific guard room and broadcast
+      io.emit('new-elephant-detection', payload);
+      io.to(detection.guardId.toString()).emit('detection-created', payload);
     }
 
-    // 7. Update Alert Status
-    let status = 'none';
-    if (successCount === eligibleResidents.length && eligibleResidents.length > 0) {
-      status = 'sent';
-    } else if (successCount > 0) {
-      status = 'partial';
-    } else if (eligibleResidents.length > 0) {
-      status = 'failed';
-    }
-
-    const updatedAlert = await Alert.findByIdAndUpdate(alert._id, { 
-      insidePatrolArea: true,
-      notificationEligible: eligibleResidents.length > 0,
-      eligibilityReason: eligibleResidents.length > 0 ? 'residents_matched' : 'no_residents_matched',
-      notificationStatus: status,
-      recipientCount: successCount,
-      affectedResidentIds: affectedResidentIds,
-      sentAt: new Date()
-    }, { new: true }).populate('detectedBy', 'name');
-
-    // Emit update via socket
-    if (updatedAlert && io) {
-      io.emit('alert-updated', normalizeAlert(updatedAlert));
-    }
-
-    console.log(`--- [Notification Service] Finished for Alert ${alert._id}. Status: ${status} ---`);
-    return { success: true, status, count: successCount };
+    console.log(`--- [Notification Service] Finished. Sent: ${successCount}/${eligibleCount} ---`);
+    return { success: true, status: 'completed', count: successCount };
   } catch (err) {
-    console.error(`--- [Notification Service] Critical Error for Alert ${alert._id} ---`);
-    console.error(err);
-    await Alert.findByIdAndUpdate(alert._id, { 
-      notificationStatus: 'failed',
-      eligibilityReason: 'service_error'
-    });
-    return { success: false, error: err.message };
+    console.error(`--- [Notification Service] Critical Error ---`, err);
+    return { success: false, error: err.message, status: 'error' };
   }
 };
-
 
 /**
  * Resends a specific notification
  */
-const resendNotification = async (deliveryId, alertId, io) => {
-  const delivery = await NotificationDelivery.findOne({ _id: deliveryId, alertId });
+const resendNotification = async (deliveryId, io) => {
+  const delivery = await NotificationDelivery.findById(deliveryId);
   if (!delivery) throw new Error('Delivery record not found');
 
-  const alert = await Alert.findById(alertId).populate('detectedBy', 'name');
-  if (!alert) throw new Error('Alert not found');
-
-  // Fetch current resident data to get latest telegramChatId
+  const detection = await Detection.findById(delivery.detectionId);
   const resident = await User.findById(delivery.residentId);
-  if (!resident) throw new Error('Resident not found');
   
-  if (!resident.telegramChatId) {
-    throw new Error('Resident still has no Telegram Chat ID linked');
+  if (!resident || !resident.telegramChatId) {
+    throw new Error('Resident has no Telegram Chat ID linked');
   }
 
-  // Update delivery record with latest chat ID if it was missing
-  if (delivery.telegramChatId === 'NOT_SET') {
-    delivery.telegramChatId = resident.telegramChatId;
-  }
-
-  const normalizedAlert = normalizeAlert(alert);
   const result = await sendAlert(resident.telegramChatId, {
-    ...normalizedAlert,
-    distanceFromResident: delivery.distanceFromElephant,
-    residentAreaName: resident.areaLocation?.areaName
+    deliveryId: delivery._id,
+    detectionId: delivery.detectionId,
+    residentId: resident._id,
+    areaName: detection.locationName,
+    detectedAt: detection.detectedAt,
+    confidence: detection.confidence,
+    latitude: detection.location.coordinates[1],
+    longitude: detection.location.coordinates[0],
+    distanceFromResident: delivery.distanceToDetectionMeters,
+    residentAreaName: resident.village
   });
 
-  delivery.retryCount += 1;
-  delivery.lastRetryAt = new Date();
-  
   if (result.success) {
-    delivery.status = 'sent';
+    delivery.notificationStatus = 'sent';
     delivery.sentAt = new Date();
     delivery.errorMessage = '';
   } else {
-    delivery.status = 'failed';
+    delivery.notificationStatus = 'failed';
     delivery.errorMessage = result.error || 'Retry failed';
   }
 
   await delivery.save();
-
-  if (io) {
-    io.emit('delivery-updated', delivery);
-  }
-
+  if (io) io.emit('delivery-updated', delivery);
   return delivery;
-};
-
-/**
- * Resends all failed notifications for an alert
- */
-const resendAllFailed = async (alertId, io) => {
-  const failedDeliveries = await NotificationDelivery.find({ 
-    alertId, 
-    status: { $in: ['failed', 'not_sent'] } 
-  });
-  
-  if (failedDeliveries.length === 0) return [];
-
-  const alert = await Alert.findById(alertId).populate('detectedBy', 'name');
-  if (!alert) throw new Error('Alert not found');
-
-  const normalizedAlert = normalizeAlert(alert);
-  const results = [];
-
-  for (const delivery of failedDeliveries) {
-    // Fetch current resident data
-    const resident = await User.findById(delivery.residentId);
-    if (!resident || !resident.telegramChatId) continue;
-
-    // Update delivery record with latest chat ID if it was missing
-    if (delivery.telegramChatId === 'NOT_SET') {
-      delivery.telegramChatId = resident.telegramChatId;
-    }
-
-    const resendResult = await sendAlert(resident.telegramChatId, {
-      ...normalizedAlert,
-      distanceFromResident: delivery.distanceFromElephant,
-      residentAreaName: resident.areaLocation?.areaName
-    });
-
-    delivery.retryCount += 1;
-    delivery.lastRetryAt = new Date();
-
-    if (resendResult.success) {
-      delivery.status = 'sent';
-      delivery.sentAt = new Date();
-      delivery.errorMessage = '';
-    } else {
-      delivery.status = 'failed';
-      delivery.errorMessage = resendResult.error || 'Retry failed';
-    }
-
-    await delivery.save();
-    results.push(delivery);
-
-    if (io) {
-      io.emit('delivery-updated', delivery);
-    }
-  }
-
-  return results;
 };
 
 module.exports = {
   triggerAlertNotifications,
-  resendNotification,
-  resendAllFailed
+  resendNotification
 };

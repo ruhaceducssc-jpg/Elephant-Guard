@@ -1,319 +1,251 @@
+const Detection = require('../models/Detection');
 const Alert = require('../models/Alert');
 const NotificationDelivery = require('../models/NotificationDelivery');
-const { getReadableLocation } = require('../services/geocodingService');
+const { getReadableLocation, calculateDistance } = require('../services/geocodingService');
 const { 
   triggerAlertNotifications, 
-  resendNotification, 
-  resendAllFailed 
+  resendNotification 
 } = require('../services/notificationService');
-const { normalizeAlert, isPointInPolygon } = require('../utils/alertUtils');
+const { normalizeDetection, isPointInPolygon } = require('../utils/alertUtils');
+const { manualClearDetection } = require('../services/detectionStatusService');
 
-// @desc    Create elephant alert
-// @route   POST /api/alerts
+// @desc    Create elephant detection and alert
+// @route   POST /api/detections
 // @access  Private
 exports.createAlert = async (req, res) => {
-  const { longitude, latitude, locationName, confidence, detectionSessionId } = req.body;
+  const { longitude, latitude, locationName, confidence, detectionSessionId, source } = req.body;
   const image = req.file ? req.file.filename : '';
 
+  // 1. Validation & Parsing
   const lat = parseFloat(latitude);
   const lng = parseFloat(longitude);
+  const conf = parseFloat(confidence) || 0;
+  const guardId = req.guard?._id;
 
   if (isNaN(lat) || isNaN(lng)) {
-    return res.status(400).json({ message: 'Invalid GPS coordinates' });
+    return res.status(400).json({ success: false, message: 'Valid GPS coordinates are required' });
   }
 
-  // Configuration for deduplication
-  const ALERT_DEDUPE_WINDOW_MS = parseInt(process.env.ALERT_DEDUPE_WINDOW_MS) || 60000;
-  const ALERT_DEDUPE_DISTANCE_METERS = parseInt(process.env.ALERT_DEDUPE_DISTANCE_METERS) || 100;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ success: false, message: 'GPS coordinates are out of valid range' });
+  }
+
+  if (!guardId) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  // Generate a unique session ID if not provided to prevent compound index collisions on (guardId, null)
+  const sessionId = detectionSessionId || `manual-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
   try {
-    // 1. Check for an existing alert with the same detectionSessionId (Idempotency)
-    if (detectionSessionId) {
-      const existingById = await Alert.findOne({ detectionSessionId });
-      if (existingById) {
-        console.log(`Duplicate detectionSessionId detected: ${detectionSessionId}`);
-        return res.status(200).json({
-          ...normalizeAlert(existingById),
-          duplicate: true,
-          message: 'Detection event already processed'
-        });
-      }
-    }
-
-    // 2. Secondary deduplication check (Time and Location fallback)
-    const timeWindow = new Date(Date.now() - ALERT_DEDUPE_WINDOW_MS);
-    const existingNear = await Alert.findOne({
-      detectedBy: req.guard ? req.guard._id : null,
-      detectedAt: { $gte: timeWindow },
-      location: {
-        $near: {
-          $geometry: { type: "Point", coordinates: [lng, lat] },
-          $maxDistance: ALERT_DEDUPE_DISTANCE_METERS
-        }
-      }
-    });
-
-    if (existingNear) {
-      console.log('Similar recent alert detected by backend nearby, skipping creation');
+    // 2. Idempotency Check
+    const existing = await Detection.findOne({ guardId, detectionSessionId: sessionId });
+    if (existing) {
       return res.status(200).json({
-        ...normalizeAlert(existingNear),
+        ...normalizeDetection(existing),
         duplicate: true,
-        message: 'A similar alert was recently reported nearby'
+        message: 'Detection event already processed'
       });
     }
 
-    // Check if point is inside guard's patrol area
-    let insidePatrolArea = false;
+    // 3. Determine Patrol Area Boundary
+    let insideGuardArea = false;
     if (req.guard && req.guard.patrolArea) {
-      insidePatrolArea = isPointInPolygon([lng, lat], req.guard.patrolArea);
+      insideGuardArea = isPointInPolygon([lng, lat], req.guard.patrolArea);
     }
 
     let finalLocationName = locationName;
-    if (!finalLocationName || finalLocationName === 'Unknown Location' || finalLocationName === 'Live Patrol Scan' || finalLocationName === 'Analyzed Gallery Upload' || finalLocationName === 'Automated Detection' || finalLocationName === 'Manual Deployment') {
-      finalLocationName = await getReadableLocation(lat, lng);
+    if (!finalLocationName || ['Unknown Location', 'Live Patrol Scan', 'Analyzed Gallery Upload', 'Automated Detection', 'Manual Deployment'].includes(finalLocationName)) {
+      try {
+        finalLocationName = await getReadableLocation(lat, lng);
+      } catch (geoErr) {
+        console.warn('Geocoding fallback:', geoErr.message);
+        finalLocationName = 'Sector Analyzed';
+      }
     }
 
-    const alertData = {
-      image,
-      location: {
-        type: 'Point',
-        coordinates: [lng, lat],
-        locationName: finalLocationName,
+    // 4. Create Detection Record
+    const detectionData = {
+      guardId,
+      detectionSessionId: sessionId,
+      source: source || (detectionSessionId ? 'camera' : 'upload'),
+      imageUrl: image,
+      confidence: conf,
+      location: { 
+        type: 'Point', 
+        coordinates: [lng, lat] 
       },
-      confidence: parseFloat(confidence) || 0,
-      detectedBy: req.guard ? req.guard._id : null,
-      insidePatrolArea,
-      detectionSessionId
+      locationName: finalLocationName || 'Sector Analyzed',
+      insideGuardArea,
+      status: 'active'
     };
 
-    const alert = await Alert.create(alertData);
+    console.log(`Creating detection for guard ${guardId} at ${lng}, ${lat}`);
+    const detection = await Detection.create(detectionData);
 
-    const populatedAlert = await Alert.findById(alert._id).populate('detectedBy', 'name');
-    const normalizedAlert = normalizeAlert(populatedAlert);
-
-    // Emit socket event for real-time dashboard (only to the guard who detected it)
+    // 5. Trigger Notifications (Async background work)
     const io = req.app.get('socketio');
-    if (io && req.guard) {
-      io.to(req.guard._id.toString()).emit('new-elephant-alert', normalizedAlert);
+    let notificationResult = { success: true, status: 'none' };
+    
+    try {
+      notificationResult = await triggerAlertNotifications(detection, io);
+    } catch (notifError) {
+      console.error('Notification background failure:', notifError);
+      notificationResult = { success: false, status: 'failed', error: notifError.message };
     }
 
-    // Trigger notifications in background and wait for initial summary
-    const notificationResult = await triggerAlertNotifications(populatedAlert, io);
-
-    res.status(201).json({
+    // Return success
+    return res.status(201).json({
       success: true,
-      alert: normalizedAlert,
-      summary: {
-        insideGuardArea: normalizedAlert.insidePatrolArea,
-        status: notificationResult.status,
-        count: notificationResult.count
-      }
+      duplicate: false,
+      detection: normalizeDetection(detection),
+      notificationStatus: notificationResult.status || 'none',
+      message: notificationResult.success ? 'Elephant detection created successfully.' : 'Detection saved, but notifications encountered issues.'
     });
+
   } catch (error) {
-    // Handle MongoDB duplicate key error (code 11000) for detectionSessionId
-    if (error.code === 11000 && error.keyPattern && error.keyPattern.detectionSessionId) {
-      console.log(`Concurrent duplicate detectionSessionId handled: ${detectionSessionId}`);
-      const existingAlert = await Alert.findOne({ detectionSessionId });
-      return res.status(200).json({
-        ...normalizeAlert(existingAlert),
-        duplicate: true,
-        message: 'Detection event already processed (concurrent)'
-      });
+    // Detailed Duplicate Key Error Handling
+    if (error.code === 11000) {
+      console.log('Duplicate detection attempt detected via MongoDB index');
+      const existing = await Detection.findOne({ guardId, detectionSessionId: sessionId });
+      if (existing) {
+        return res.status(200).json({
+          ...normalizeDetection(existing),
+          duplicate: true,
+          message: 'Detection already exists'
+        });
+      }
     }
     
-    console.error('Create alert error:', error);
-    res.status(400).json({ message: error.message });
+    console.error('CRITICAL: Create detection error:', error);
+    return res.status(400).json({ 
+      success: false,
+      message: 'Failed to create detection record',
+      error: error.message,
+      details: error.errors ? Object.keys(error.errors).map(k => error.errors[k].message) : undefined
+    });
   }
 };
 
-// @desc    Resend a specific notification delivery
-// @route   POST /api/alerts/:id/notifications/:deliveryId/resend
+// @desc    Get all detections for the guard
+// @route   GET /api/detections
 // @access  Private
-exports.resendNotification = async (req, res) => {
-  try {
-    const { id, deliveryId } = req.params;
-    const io = req.app.get('socketio');
-    
-    const delivery = await resendNotification(deliveryId, id, io);
-    res.json(delivery);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Resend all failed notifications for an alert
-// @route   POST /api/alerts/:id/notifications/resend-failed
-// @access  Private
-exports.resendAllFailedNotifications = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const io = req.app.get('socketio');
-    
-    const results = await resendAllFailed(id, io);
-    res.json(results);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get all notification deliveries
-// @route   GET /api/alerts/notifications
-// @access  Private
-exports.getAllNotifications = async (req, res) => {
-  try {
-    // Only show notifications for alerts created by this guard
-    const alerts = await Alert.find({ detectedBy: req.guard._id }).select('_id');
-    const alertIds = alerts.map(a => a._id);
-
-    const notifications = await NotificationDelivery.find({ alertId: { $in: alertIds } })
-      .sort('-createdAt')
-      .limit(200);
-    res.json(notifications);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get notification deliveries for an alert
-// @route   GET /api/alerts/:id/notifications
-// @access  Private
-exports.getAlertNotifications = async (req, res) => {
-  try {
-    // Verify alert ownership/permission
-    const alert = await Alert.findOne({ _id: req.params.id, detectedBy: req.guard._id });
-    if (!alert) return res.status(403).json({ message: 'Not authorized to view these logs' });
-
-    const notifications = await NotificationDelivery.find({ alertId: req.params.id })
-      .sort('residentName');
-    res.json(notifications);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get all alerts with filtering
-// @route   GET /api/alerts
-// @access  Public
 exports.getAlerts = async (req, res) => {
-  const { status, areaName, minConfidence, dateFrom, dateTo, search } = req.query;
+  const { status, search } = req.query;
+  let query = { guardId: req.guard._id };
   
-  // Scope to current guard
-  let query = { detectedBy: req.guard._id };
-  
-  if (status && status !== 'all') query.alertStatus = status;
-  if (minConfidence) query.confidence = { $gte: parseFloat(minConfidence) };
-  
-  if (dateFrom || dateTo) {
-    query.detectedAt = {};
-    if (dateFrom) query.detectedAt.$gte = new Date(dateFrom);
-    if (dateTo) query.detectedAt.$lte = new Date(dateTo);
-  }
-
-  if (search) {
-    query['location.locationName'] = { $regex: search, $options: 'i' };
-  } else if (areaName) {
-    query['location.locationName'] = { $regex: areaName, $options: 'i' };
-  }
+  if (status && status !== 'all') query.status = status;
+  if (search) query.locationName = { $regex: search, $options: 'i' };
 
   try {
-    const alerts = await Alert.find(query).sort('-detectedAt')
-      .populate('detectedBy', 'name')
-      .populate('affectedResidentIds', 'name');
+    const detections = await Detection.find(query).sort('-detectedAt').populate('alertId');
+    res.json(detections.map(d => normalizeDetection(d)));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get linked residents and safety summary for a detection
+// @route   GET /api/detections/:id/residents
+// @access  Private
+exports.getDetectionResidents = async (req, res) => {
+  const getEffectiveSafetyStatus = (delivery) => {
+    if (delivery.guardAssessment?.status && delivery.guardAssessment.status !== 'pending') {
+      return delivery.guardAssessment.status;
+    }
+    return delivery.residentResponse?.status || 'pending';
+  };
+
+  try {
+    const detection = await Detection.findOne({ _id: req.params.id, guardId: req.guard._id });
+    if (!detection) return res.status(404).json({ message: 'Detection not found' });
+
+    const deliveries = await NotificationDelivery.find({ detectionId: detection._id })
+      .populate('residentId', 'name phone telegramChatId village areaLocation geofenceRadiusMeters')
+      .sort('createdAt');
     
-    const normalizedAlerts = alerts.map(alert => normalizeAlert(alert));
-    res.json(normalizedAlerts);
+    // Recalculate distance if zero/missing and save it
+    for (let delivery of deliveries) {
+      if (!delivery.distanceToDetectionMeters || delivery.distanceToDetectionMeters === 0) {
+        const detectionLoc = detection.location?.coordinates;
+        const residentLoc = delivery.residentSnapshot?.location?.coordinates || delivery.residentId?.areaLocation?.coordinates;
+
+        if (detectionLoc && residentLoc && Array.isArray(detectionLoc) && Array.isArray(residentLoc)) {
+          const dist = calculateDistance(
+            detectionLoc[1], detectionLoc[0],
+            residentLoc[1], residentLoc[0]
+          );
+          
+          if (dist !== null) {
+            delivery.distanceToDetectionMeters = Math.round(dist);
+            await delivery.save();
+          }
+        }
+      }
+    }
+
+    const summary = {
+      linkedResidents: deliveries.length,
+      sentSuccessfully: deliveries.filter(d => d.notificationStatus === 'sent').length,
+      helpRequests: deliveries.filter(d => getEffectiveSafetyStatus(d) === 'help_requested').length
+    };
+
+    const safetyOutcome = {
+      protected: deliveries.filter(d => getEffectiveSafetyStatus(d) === 'protected').length,
+      pending: deliveries.filter(d => getEffectiveSafetyStatus(d) === 'pending').length,
+      attackedOrCannotProtect: deliveries.filter(d => {
+        const status = getEffectiveSafetyStatus(d);
+        return status === 'attacked' || status === 'cannot_protect';
+      }).length,
+      requiredHelp: summary.helpRequests
+    };
+
+    res.json({
+      success: true,
+      notificationSummary: summary,
+      safetyOutcome,
+      linkedResidents: deliveries
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
 // @desc    Update alert status
-// @route   PATCH /api/alerts/:id/status
+// @route   PATCH /api/detections/:id/status
 // @access  Private
 exports.updateAlertStatus = async (req, res) => {
   const { status } = req.body;
-
   try {
-    const alert = await Alert.findById(req.params.id).populate('detectedBy', 'name');
-
-    if (alert) {
-      alert.alertStatus = status;
-      const updatedAlert = await alert.save();
-      const normalizedAlert = normalizeAlert(updatedAlert);
-
-      const io = req.app.get('socketio');
-      if (io) {
-        io.emit('alert-updated', normalizedAlert);
-      }
-
-      res.json(normalizedAlert);
+    const detection = await Detection.findOneAndUpdate(
+      { _id: req.params.id, guardId: req.guard._id },
+      { status },
+      { new: true }
+    );
+    if (detection) {
+      res.json(normalizeDetection(detection));
     } else {
-      res.status(404).json({ message: 'Alert not found' });
+      res.status(404).json({ message: 'Detection not found' });
     }
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 };
 
-// @desc    Update alert notes
-// @route   PATCH /api/alerts/:id/notes
+// @desc    Resend a specific notification
+// @route   POST /api/detections/notifications/:deliveryId/resend
 // @access  Private
-exports.updateAlertNotes = async (req, res) => {
-  const { notes } = req.body;
-
+exports.resendNotification = async (req, res) => {
   try {
-    const alert = await Alert.findById(req.params.id).populate('detectedBy', 'name');
-
-    if (alert) {
-      alert.notes = notes;
-      const updatedAlert = await alert.save();
-      res.json(normalizeAlert(updatedAlert));
-    } else {
-      res.status(404).json({ message: 'Alert not found' });
-    }
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};
-
-// @desc    Get single alert
-// @route   GET /api/alerts/:id
-// @access  Public
-exports.getAlertById = async (req, res) => {
-  try {
-    const alert = await Alert.findById(req.params.id)
-      .populate('detectedBy', 'name')
-      .populate('affectedResidentIds', 'name');
-
-    if (alert) {
-      res.json(normalizeAlert(alert));
-    } else {
-      res.status(404).json({ message: 'Alert not found' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Delete alert
-// @route   DELETE /api/alerts/:id
-// @access  Private
-exports.deleteAlert = async (req, res) => {
-  try {
-    const alert = await Alert.findById(req.params.id);
-    if (alert) {
-      await alert.deleteOne();
-      res.json({ message: 'Alert removed' });
-    } else {
-      res.status(404).json({ message: 'Alert not found' });
-    }
+    const delivery = await resendNotification(req.params.deliveryId, req.app.get('socketio'));
+    res.json(delivery);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
 // @desc    Send a test telegram notification
-// @route   POST /api/alerts/notifications/test
+// @route   POST /api/detections/notifications/test
 // @access  Private
 exports.testNotification = async (req, res) => {
   try {
@@ -336,6 +268,65 @@ exports.testNotification = async (req, res) => {
       res.json({ message: 'Test notification sent' });
     } else {
       res.status(500).json({ message: result.error || 'Failed to send test' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Clear alert manually by guard
+// @route   PATCH /api/detections/:id/clear
+// @access  Private
+exports.clearAlert = async (req, res) => {
+  const { reason } = req.body;
+  try {
+    const detection = await manualClearDetection(req.params.id, req.guard._id, reason);
+    
+    if (detection) {
+      // Emit socket event
+      const io = req.app.get('socketio');
+      if (io) {
+        io.to(req.guard._id.toString()).emit('detection-status-updated', {
+          detectionId: detection._id,
+          alertId: detection.alertId,
+          status: 'cleared',
+          clearedAt: detection.clearedAt,
+          clearedBy: 'guard',
+          clearReason: detection.clearReason
+        });
+      }
+      res.json(normalizeDetection(detection));
+    } else {
+      res.status(404).json({ message: 'Detection not found or already cleared' });
+    }
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+exports.getAlertById = async (req, res) => {
+  try {
+    const detection = await Detection.findOne({ _id: req.params.id, guardId: req.guard._id }).populate('alertId');
+    if (detection) {
+      res.json(normalizeDetection(detection));
+    } else {
+      res.status(404).json({ message: 'Detection not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.deleteAlert = async (req, res) => {
+  try {
+    const detection = await Detection.findOne({ _id: req.params.id, guardId: req.guard._id });
+    if (detection) {
+      await Alert.deleteMany({ detectionId: detection._id });
+      await NotificationDelivery.deleteMany({ detectionId: detection._id });
+      await detection.deleteOne();
+      res.json({ message: 'Detection record removed' });
+    } else {
+      res.status(404).json({ message: 'Detection not found' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -120,6 +120,13 @@ guardSchema.pre('save', async function (next) {
     return next();
   }
 
+  // If the password already looks like a bcrypt hash, don't re-hash it
+  // Bcrypt hashes start with $2a$, $2b$, or $2y$ and are 60 characters long
+  const isAlreadyHashed = /^\$2[ayb]\$.{56}$/.test(this.password);
+  if (isAlreadyHashed) {
+    return next();
+  }
+
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });

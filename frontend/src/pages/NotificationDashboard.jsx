@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Search, CheckCircle, XCircle, Clock, User, 
   ShieldAlert, BarChart3, Send, RotateCcw, Activity, Zap, 
-  RefreshCw, Info, AlertTriangle
+  RefreshCw, Info, AlertTriangle, ShieldCheck
 } from 'lucide-react';
 import api from '../services/api';
 import { format, isValid } from 'date-fns';
@@ -13,7 +13,7 @@ const NotificationDashboard = () => {
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [deliveries, setDeliveries] = useState([]);
-  const [summary, setSummary] = useState({ total: 0, sent: 0, failed: 0, pending: 0, notSent: 0 });
+  const [summary, setSummary] = useState({ total: 0, sent: 0, failed: 0, pending: 0, notSent: 0, protected: 0, helpRequests: 0 });
   
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
@@ -35,7 +35,7 @@ const NotificationDashboard = () => {
       const { data } = await api.get(`/deliveries/${alertId}`);
       if (data && data.success) {
         setDeliveries(data.deliveries || []);
-        setSummary(data.summary || { total: 0, sent: 0, failed: 0, pending: 0, notSent: 0 });
+        setSummary(data.summary || { total: 0, sent: 0, failed: 0, pending: 0, notSent: 0, protected: 0, helpRequests: 0 });
       }
     } catch (error) {
       console.error('Fetch details error:', error);
@@ -48,7 +48,12 @@ const NotificationDashboard = () => {
   const handleEventSelect = useCallback((event) => {
     if (!event) return;
     setSelectedEvent(event);
-    fetchDeliveryDetails(event.alertId);
+    if (event.alertId) {
+      fetchDeliveryDetails(event.alertId);
+    } else {
+      setDeliveries([]);
+      setSummary({ total: 0, sent: 0, failed: 0, pending: 0, notSent: 0, protected: 0, helpRequests: 0 });
+    }
   }, [fetchDeliveryDetails]);
 
   const fetchEvents = useCallback(async () => {
@@ -63,7 +68,7 @@ const NotificationDashboard = () => {
       }
     } catch (error) {
       console.error('Fetch events error:', error);
-      toast.error('Failed to sync tracking data');
+      toast.error('Failed to sync delivery events');
     } finally {
       setIsLoading(false);
     }
@@ -81,9 +86,15 @@ const NotificationDashboard = () => {
       socket.emit('join', guardId);
     }
 
-    socket.on('new-elephant-alert', () => {
+    socket.on('new-detection', () => {
       fetchEvents();
-      toast('Operational update: New tracking event', { icon: '📡' });
+    });
+
+    socket.on('detection-status-updated', (data) => {
+      setEvents(prev => prev.map(e => e.detectionId === data.detectionId ? { ...e, status: data.status } : e));
+      if (selectedEvent && selectedEvent.detectionId === data.detectionId) {
+        setSelectedEvent(prev => ({ ...prev, status: data.status }));
+      }
     });
 
     socket.on('delivery-updated', (updated) => {
@@ -91,84 +102,114 @@ const NotificationDashboard = () => {
         const index = prev.findIndex(d => d._id === updated._id);
         if (index !== -1) {
            const newDeliveries = [...prev];
-           newDeliveries[index] = updated;
+           newDeliveries[index] = { ...newDeliveries[index], ...updated };
            return newDeliveries;
         }
         return prev;
       });
+      // Optionally update summary if the selected alert matches
+      if (selectedEvent && updated.alertId === selectedEvent.alertId) {
+        fetchDeliveryDetails(selectedEvent.alertId);
+      }
     });
 
     return () => socket.disconnect();
-  }, [fetchEvents]);
-
-  const handleGenerateMissing = async () => {
-    if (!selectedEvent) return;
-    setIsProcessing(true);
-    try {
-      toast.loading('Generating operational records...', { id: 'gen' });
-      const { data } = await api.post(`/deliveries/${selectedEvent.alertId}/generate`);
-      if (data && data.success) {
-        toast.success(data.message || 'Records initialized', { id: 'gen' });
-        fetchDeliveryDetails(selectedEvent.alertId);
-        fetchEvents(); 
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Generation failed', { id: 'gen' });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  }, [fetchEvents, selectedEvent, fetchDeliveryDetails]);
 
   const handleResendSingle = async (deliveryId) => {
     if (!selectedEvent) return;
     try {
-      toast.loading('Initiating retransmission...', { id: 'resend' });
+      toast.loading('Resending alert...', { id: 'resend' });
       const { data } = await api.post(`/deliveries/${selectedEvent.alertId}/resend/${deliveryId}`);
       if (data && data.success) {
-        toast.success('Notification dispatched', { id: 'resend' });
+        toast.success('Alert sent successfully', { id: 'resend' });
         fetchDeliveryDetails(selectedEvent.alertId);
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Resend failed', { id: 'resend' });
+      toast.error('Resend failed', { id: 'resend' });
     }
   };
 
-  const handleResendAllFailed = async () => {
-    if (!selectedEvent) return;
-    if (!window.confirm('Attempt retransmission for all failed and unsent recipients?')) return;
+  const filteredDeliveries = React.useMemo(() => {
+    const query = searchTerm.toLowerCase().trim();
+    const digitQuery = query.replace(/\D/g, '');
+
+    const isDelivered = (d) => d.notificationStatus === 'sent';
+    const isFailed = (d) => d.notificationStatus === 'failed';
+    const isPending = (d) => d.notificationStatus === 'pending' || d.notificationStatus === 'retrying';
+
+    const getEffectiveStatus = (d) => {
+      if (d.residentResponse?.status === 'help_requested' || d.guardAssessment?.status === 'help_requested') return 'help_requested';
+      if (d.guardAssessment?.status === 'attacked') return 'attacked';
+      if (d.residentResponse?.status === 'cannot_protect') return 'cannot_protect';
+      if (d.guardAssessment?.status === 'protected' || d.residentResponse?.status === 'protected') return 'protected';
+      return 'pending';
+    };
+
+    return deliveries.filter(d => {
+      // 1. Filter logic
+      let matchesFilter = true;
+      if (statusFilter === 'sent') matchesFilter = isDelivered(d);
+      else if (statusFilter === 'failed') matchesFilter = isFailed(d);
+      else if (statusFilter === 'pending') matchesFilter = isPending(d);
+      else if (statusFilter === 'protected') matchesFilter = getEffectiveStatus(d) === 'protected';
+      else if (statusFilter === 'help_requested') matchesFilter = getEffectiveStatus(d) === 'help_requested';
+
+      if (!matchesFilter) return false;
+
+      // 2. Search logic
+      if (!query) return true;
+
+      const resident = d.residentId || {};
+      const name = String(resident.name || d.residentName || '').toLowerCase();
+      const phone = String(resident.phone || d.phone || '').toLowerCase();
+      const telegramId = String(resident.telegramChatId || d.telegramChatId || '').toLowerCase();
+      
+      const phoneDigits = phone.replace(/\D/g, '');
+      const telegramIdDigits = telegramId.replace(/\D/g, '');
+
+      return name.includes(query) || 
+             phone.includes(query) || 
+             telegramId.includes(query) ||
+             (digitQuery && (phoneDigits.includes(digitQuery) || telegramIdDigits.includes(digitQuery)));
+    });
+  }, [deliveries, searchTerm, statusFilter]);
+
+  const getFilterCount = (id) => {
+    if (id === 'all') return deliveries.length;
     
-    setIsProcessing(true);
-    try {
-      toast.loading('Broadcasting recovery signals...', { id: 'resend-all' });
-      const { data } = await api.post(`/deliveries/${selectedEvent.alertId}/resend-failed`);
-      if (data && data.success) {
-        toast.success(`Processed ${data.processed || 0} recoveries`, { id: 'resend-all' });
-        fetchDeliveryDetails(selectedEvent.alertId);
-      }
-    } catch (error) {
-      toast.error('Bulk recovery failed', { id: 'resend-all' });
-    } finally {
-      setIsProcessing(false);
-    }
+    const isDelivered = (d) => d.notificationStatus === 'sent';
+    const isFailed = (d) => d.notificationStatus === 'failed';
+    const isPending = (d) => d.notificationStatus === 'pending' || d.notificationStatus === 'retrying';
+
+    const getEffectiveStatus = (d) => {
+      if (d.residentResponse?.status === 'help_requested' || d.guardAssessment?.status === 'help_requested') return 'help_requested';
+      if (d.guardAssessment?.status === 'attacked') return 'attacked';
+      if (d.residentResponse?.status === 'cannot_protect') return 'cannot_protect';
+      if (d.guardAssessment?.status === 'protected' || d.residentResponse?.status === 'protected') return 'protected';
+      return 'pending';
+    };
+
+    if (id === 'sent') return deliveries.filter(isDelivered).length;
+    if (id === 'failed') return deliveries.filter(isFailed).length;
+    if (id === 'pending') return deliveries.filter(isPending).length;
+    if (id === 'protected') return deliveries.filter(d => getEffectiveStatus(d) === 'protected').length;
+    if (id === 'help_requested') return deliveries.filter(d => getEffectiveStatus(d) === 'help_requested').length;
+    
+    return 0;
   };
 
-  const filteredDeliveries = deliveries.filter(d => {
-    const s = searchTerm.toLowerCase();
-    const nameMatch = String(d.residentName || '').toLowerCase().includes(s);
-    const phoneMatch = String(d.phone || '').toLowerCase().includes(s);
-    const idMatch = String(d.telegramChatId || '').toLowerCase().includes(s);
-    
-    let statusMatch = false;
-    if (statusFilter === 'all') {
-      statusMatch = true;
-    } else if (statusFilter === 'pending') {
-      statusMatch = d.status === 'pending' || d.status === 'retrying';
-    } else {
-      statusMatch = d.status === statusFilter;
+  const getEmptyMessage = () => {
+    if (searchTerm) return "No residents match your search.";
+    switch (statusFilter) {
+      case 'sent': return "No delivered residents found.";
+      case 'failed': return "No failed deliveries found.";
+      case 'pending': return "No pending deliveries found.";
+      case 'protected': return "No protected residents found.";
+      case 'help_requested': return "No residents have requested help.";
+      default: return "No residents were notified for this detection event.";
     }
-    
-    return (nameMatch || phoneMatch || idMatch) && statusMatch;
-  });
+  };
 
   return (
     <div className="space-y-[22px] pb-12 page-fade-in max-w-[1920px] mx-auto">
@@ -178,19 +219,9 @@ const NotificationDashboard = () => {
           <h1 className="text-[28px] font-[800] text-[#0f172a] tracking-tight">
              Lanka Beacon <span className="text-[#1768d1]">Delivery Tracking</span>
           </h1>
-          <p className="text-[#64748b] text-[11px] font-[700] mt-1.5 uppercase tracking-widest">Real-time status of community notification relays and geofence verification</p>
+          <p className="text-[#64748b] text-[11px] font-[700] mt-1.5 uppercase tracking-widest">Real-time status of community notification alerts and safety responses</p>
         </div>
         <div className="flex items-center gap-3">
-          {(summary?.failed > 0 || summary?.notSent > 0) && (
-            <button 
-              onClick={handleResendAllFailed}
-              disabled={isProcessing}
-              className="h-11 px-5 bg-[#e02424] text-white rounded-[5px] font-[700] text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-[#c81e1e] transition-all shadow-lg shadow-[#e02424]/10"
-            >
-              <RotateCcw size={14} className={isProcessing ? 'animate-spin' : ''} />
-              Retry Failed Alerts ({summary.failed + summary.notSent})
-            </button>
-          )}
           <button 
             onClick={fetchEvents}
             className="w-11 h-11 bg-white border border-[#dfe7f1] text-[#64748b] rounded-[5px] hover:bg-[#f4f8ff] hover:text-[#1768d1] transition-all shadow-sm flex items-center justify-center"
@@ -201,12 +232,12 @@ const NotificationDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-[14px]">
-        {/* Left Panel: Operational Events */}
+        {/* Left Panel: Detection Events */}
         <div className="lg:col-span-4 space-y-[14px]">
           <div className="card flex flex-col max-h-[700px] border-[#dfe7f1]">
             <div className="px-6 py-[18px] border-b border-[#dfe7f1] bg-[#f8fafc] flex justify-between items-center shrink-0">
-               <h2 className="text-[11px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em]">Operational Event Log</h2>
-               <span className="text-[10px] font-[800] bg-[#1768d1] text-white px-2.5 py-1 rounded-[5px] shadow-sm">{events.length} LOGS</span>
+               <h2 className="text-[11px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em]">Detection Event Log</h2>
+               <span className="text-[10px] font-[800] bg-[#1768d1] text-white px-2.5 py-1 rounded-[5px] shadow-sm">{events.length} EVENTS</span>
             </div>
             <div className="p-2 space-y-1 overflow-y-auto custom-scrollbar flex-1">
               {isLoading ? (
@@ -214,21 +245,21 @@ const NotificationDashboard = () => {
               ) : events.length === 0 ? (
                 <div className="py-24 text-center space-y-4 opacity-40">
                    <Activity size={32} className="mx-auto text-[#cbd5e1]" />
-                   <p className="text-[#64748b] font-[800] uppercase text-[11px] tracking-widest">No deployments detected</p>
+                   <p className="text-[#64748b] font-[800] uppercase text-[11px] tracking-widest">No detection events found</p>
                 </div>
               ) : (
                 events.map(event => (
                   <button
-                    key={event.alertId}
+                    key={event.detectionId}
                     onClick={() => handleEventSelect(event)}
                     className={`w-full p-4 rounded-[5px] border transition-all text-left flex items-center gap-4 group ${
-                      selectedEvent?.alertId === event.alertId
+                      selectedEvent?.detectionId === event.detectionId
                         ? 'bg-[#eaf2ff] border-[#1768d1] text-[#1768d1]'
                         : 'bg-white border-transparent text-[#475569] hover:bg-[#f8fafc] hover:border-[#dfe7f1]'
                     }`}
                   >
                     <div className={`w-11 h-11 rounded-[5px] flex items-center justify-center shrink-0 transition-colors border-2 border-white shadow-sm ${
-                      selectedEvent?.alertId === event.alertId
+                      selectedEvent?.detectionId === event.detectionId
                         ? 'bg-[#1768d1] text-white'
                         : 'bg-[#f1f5f9] text-[#94a3b8] group-hover:bg-[#eaf2ff] group-hover:text-[#1768d1]'
                     }`}>
@@ -237,26 +268,22 @@ const NotificationDashboard = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start gap-2">
                         <p className={`text-[14px] font-[700] tracking-tight truncate ${
-                          selectedEvent?.alertId === event.alertId ? 'text-[#0b2d63]' : 'text-[#0f172a]'
+                          selectedEvent?.detectionId === event.detectionId ? 'text-[#0b2d63]' : 'text-[#0f172a]'
                         }`}>
-                          {event.locationName || 'Unknown Node'}
+                          {event.locationName || 'Unknown Location'}
                         </p>
                         <span className={`text-[10px] font-[800] px-2 py-0.5 rounded-[5px] border ${
-                          selectedEvent?.alertId === event.alertId 
+                          selectedEvent?.detectionId === event.detectionId 
                             ? 'bg-white border-[#1768d1]/30 text-[#1768d1]'
-                            : (event.summary?.sent === event.summary?.total && event.summary?.total > 0)
-                            ? 'bg-[#edfcf4] text-[#0e7a42] border-[#b7efcf]'
-                            : (event.summary?.failed > 0 || event.summary?.notSent > 0)
-                            ? 'bg-[#fff1f1] text-[#c81e1e] border-[#facaca]'
                             : 'bg-[#f1f5f9] text-[#64748b] border-[#dbe4ef]'
                         }`}>
                           {event.summary?.sent || 0}/{event.summary?.total || 0}
                         </span>
                       </div>
                       <p className={`text-[10px] font-[700] uppercase tracking-widest mt-1 ${
-                        selectedEvent?.alertId === event.alertId ? 'text-[#1768d1]/70' : 'text-[#94a3b8]'
+                        selectedEvent?.detectionId === event.detectionId ? 'text-[#1768d1]/70' : 'text-[#94a3b8]'
                       }`}>
-                        {safeFormat(event.detectedAt, 'MMM dd, HH:mm')} Transmission
+                        {safeFormat(event.detectedAt, 'MMM dd, HH:mm')}
                       </p>
                     </div>
                   </button>
@@ -270,13 +297,13 @@ const NotificationDashboard = () => {
               <div className="relative z-10 space-y-6">
                 <div className="flex items-center gap-3">
                    <div className="w-11 h-11 bg-[#f4f8ff] rounded-[5px] flex items-center justify-center border border-[#eaf2ff]">
-                     <ShieldAlert size={22} className="text-[#1768d1]" />
+                     <ShieldCheck size={22} className="text-[#1768d1]" />
                    </div>
-                   <h3 className="font-[800] text-[#0f172a] text-[13px] uppercase tracking-widest">Event Confidence</h3>
+                   <h3 className="font-[800] text-[#0f172a] text-[13px] uppercase tracking-widest">Detection Confidence</h3>
                 </div>
                 <div className="space-y-4">
                    <div className="flex justify-between items-center text-[10px] font-[700] uppercase tracking-widest">
-                      <span className="text-[#64748b]">Neural Match Score</span>
+                      <span className="text-[#64748b]">AI Score</span>
                       <span className="text-[#1768d1]">{(selectedEvent.confidence * 100).toFixed(1)}%</span>
                    </div>
                    <div className="w-full bg-[#f1f5f9] h-1.5 rounded-full overflow-hidden">
@@ -284,12 +311,12 @@ const NotificationDashboard = () => {
                    </div>
                    <div className="grid grid-cols-2 gap-4 pt-2">
                       <div className="space-y-1.5">
-                        <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-widest">Protocol Matrix</p>
-                        <p className="text-[11px] font-[800] text-[#334155] uppercase">Alpha Secure</p>
+                        <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-widest">System Status</p>
+                        <p className="text-[11px] font-[800] text-[#334155] uppercase">Operational</p>
                       </div>
                       <div className="space-y-1.5 text-right">
-                        <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-widest">Sync Status</p>
-                        <p className="text-[11px] font-[800] text-[#119c55] uppercase tracking-tighter">Verified Link</p>
+                        <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-widest">Alert Status</p>
+                        <p className={`text-[11px] font-[800] uppercase ${selectedEvent.status === 'active' ? 'text-[#e02424]' : 'text-[#119c55]'}`}>{selectedEvent.status}</p>
                       </div>
                    </div>
                 </div>
@@ -306,11 +333,11 @@ const NotificationDashboard = () => {
               {/* Summary Stats */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
                 {[
-                  { label: 'Total Nodes', count: summary?.total || 0, color: 'text-[#0f172a]', icon: <User />, bg: 'bg-white', border: 'border-[#dfe7f1]' },
-                  { label: 'Sent', count: summary?.sent || 0, color: 'text-[#0e7a42]', icon: <CheckCircle />, bg: 'bg-[#edfcf4]', border: 'border-[#b7efcf]' },
+                  { label: 'Residents', count: summary?.total || 0, color: 'text-[#0f172a]', icon: <User />, bg: 'bg-white', border: 'border-[#dfe7f1]' },
+                  { label: 'Delivered', count: summary?.sent || 0, color: 'text-[#0e7a42]', icon: <CheckCircle />, bg: 'bg-[#edfcf4]', border: 'border-[#b7efcf]' },
                   { label: 'Failed', count: summary?.failed || 0, color: 'text-[#c81e1e]', icon: <XCircle />, bg: 'bg-[#fff1f1]', border: 'border-[#facaca]' },
-                  { label: 'Filtered', count: summary?.notSent || 0, color: 'text-[#64748b]', icon: <Info />, bg: 'bg-[#f8fafc]', border: 'border-[#dbe4ef]' },
-                  { label: 'Queue', count: summary?.pending || 0, color: 'text-[#b76300]', icon: <Clock />, bg: 'bg-[#fff9e8]', border: 'border-[#f8d68a]' },
+                  { label: 'Protected', count: summary?.protected || 0, color: 'text-[#1768d1]', icon: <ShieldCheck />, bg: 'bg-[#eaf2ff]', border: 'border-[#1768d1]/20' },
+                  { label: 'Help Req', count: summary?.helpRequests || 0, color: 'text-[#e02424]', icon: <AlertTriangle />, bg: 'bg-[#fff1f1]', border: 'border-[#facaca]' },
                 ].map((stat, i) => (
                   <div key={i} className={`card p-4 flex flex-col gap-3 group transition-all border ${stat.bg} ${stat.border}`}>
                     <div className={`w-8 h-8 rounded-[5px] flex items-center justify-center border border-white bg-white/60 shadow-sm ${stat.color}`}>
@@ -331,7 +358,7 @@ const NotificationDashboard = () => {
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#cbd5e1]" size={16} />
                       <input 
                         type="text" 
-                        placeholder="Search community nodes by name or ID..." 
+                        placeholder="Search by resident name, phone or Telegram ID..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="h-11 pl-11 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all"
@@ -340,21 +367,22 @@ const NotificationDashboard = () => {
                    <div className="flex items-center gap-1 overflow-x-auto w-full xl:w-auto p-1 bg-[#f1f5f9] rounded-[5px]">
                       {[
                         { id: 'all', label: 'All' },
-                        { id: 'sent', label: 'Sent' },
+                        { id: 'sent', label: 'Delivered' },
                         { id: 'failed', label: 'Failed' },
-                        { id: 'not_sent', label: 'Filtered' },
-                        { id: 'pending', label: 'Queue' }
+                        { id: 'pending', label: 'Pending' },
+                        { id: 'protected', label: 'Protected' },
+                        { id: 'help_requested', label: 'Help Requested' }
                       ].map(filter => (
                         <button
                           key={filter.id}
                           onClick={() => setStatusFilter(filter.id)}
-                          className={`h-9 px-5 rounded-[5px] font-[800] text-[10px] uppercase tracking-widest transition-all shrink-0 ${
+                          className={`h-9 px-4 rounded-[5px] font-[800] text-[10px] uppercase tracking-widest transition-all shrink-0 whitespace-nowrap ${
                             statusFilter === filter.id 
                               ? 'bg-white text-[#1768d1] shadow-sm' 
                               : 'text-[#64748b] hover:text-[#0f172a]'
                           }`}
                         >
-                          {filter.label}
+                          {filter.label} ({getFilterCount(filter.id)})
                         </button>
                       ))}
                    </div>
@@ -364,7 +392,7 @@ const NotificationDashboard = () => {
                   {isDetailsLoading ? (
                     <div className="h-full flex flex-col items-center justify-center py-32 space-y-5 opacity-40">
                        <RefreshCw size={40} className="animate-spin text-[#1768d1]" />
-                       <p className="text-[11px] font-[800] uppercase tracking-widest text-[#64748b]">Establishing Secure Relay Link...</p>
+                       <p className="text-[11px] font-[800] uppercase tracking-widest text-[#64748b]">Loading delivery data...</p>
                     </div>
                   ) : deliveries.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center py-32 space-y-8">
@@ -372,96 +400,89 @@ const NotificationDashboard = () => {
                           <ShieldAlert size={40} />
                        </div>
                        <div className="text-center space-y-3 px-8">
-                          <p className="text-[16px] font-[800] text-[#0f172a] uppercase tracking-widest">No Operational Footprint</p>
-                          <p className="text-[13px] text-[#64748b] font-[500] max-w-sm mx-auto leading-relaxed">System protocols indicate no community nodes were active within the geofence perimeter for this specific tactical event.</p>
+                          <p className="text-[16px] font-[800] text-[#0f172a] uppercase tracking-widest">No Deliveries Found</p>
+                          <p className="text-[13px] text-[#64748b] font-[500] max-w-sm mx-auto leading-relaxed">No residents were notified for this detection event.</p>
                        </div>
-                       <button 
-                         onClick={handleGenerateMissing}
-                         disabled={isProcessing}
-                         className="h-12 px-8 bg-[#1768d1] text-white rounded-[5px] shadow-xl shadow-[#1768d1]/10 font-[800] text-[12px] uppercase tracking-[0.2em] flex items-center gap-3 hover:bg-[#0f56b3] transition-all"
-                       >
-                         {isProcessing ? <RefreshCw className="animate-spin" size={18} /> : <Zap size={18} />}
-                         Initialize Tracking Nodes
-                       </button>
                     </div>
                   ) : filteredDeliveries.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center py-32 opacity-40">
                        <div className="w-16 h-16 rounded-[5px] border-2 border-dashed border-[#cbd5e1] flex items-center justify-center text-[#cbd5e1] mb-5">
                          <Search size={32} />
                        </div>
-                       <p className="text-[11px] font-[800] uppercase tracking-widest text-[#64748b]">Search query returned null</p>
+                       <p className="text-[11px] font-[800] uppercase tracking-widest text-[#64748b]">{getEmptyMessage()}</p>
                     </div>
                   ) : (
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-[#f8fafc] border-b border-[#dfe7f1]">
-                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Community Node</th>
-                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest text-center">Telemetry Range</th>
-                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Transmission Status</th>
-                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest text-right">Relay Action</th>
+                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Resident</th>
+                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest text-center">Distance</th>
+                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Alert Status</th>
+                          <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest text-right">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#edf1f6]">
-                        {filteredDeliveries.map((d) => (
+                        {filteredDeliveries.map((d) => {
+                          const formatDistance = (meters) => {
+                            if (!Number.isFinite(meters)) return 'Unavailable';
+                            if (meters < 1000) return `${Math.round(meters)} m`;
+                            return `${((meters || 0) / 1000).toFixed(2)} km`;
+                          };
+
+                          return (
                           <tr key={d._id} className="hover:bg-[#f8fafc]/60 transition-colors group">
                             <td className="px-6 py-5">
                                <div className="flex items-center gap-4">
                                   <div className={`w-10 h-10 rounded-[5px] flex items-center justify-center shrink-0 transition-all border-2 border-white shadow-sm ${
-                                    d.status === 'sent' ? 'bg-[#edfcf4] text-[#0e7a42]' : 
-                                    (d.status === 'failed' || d.status === 'not_sent') ? 'bg-[#fff1f1] text-[#c81e1e]' : 'bg-[#fff9e8] text-[#b76300]'
+                                    d.notificationStatus === 'sent' ? 'bg-[#edfcf4] text-[#0e7a42]' : 
+                                    d.notificationStatus === 'failed' ? 'bg-[#fff1f1] text-[#c81e1e]' : 'bg-[#f1f5f9] text-[#64748b]'
                                   }`}>
                                     <User size={18} />
                                   </div>
                                   <div>
-                                     <p className="font-[700] text-[#0f172a] text-[14px] tracking-tight leading-none group-hover:text-[#1768d1] transition-colors">{d.residentName}</p>
-                                     <p className="text-[10px] text-[#94a3b8] font-[700] uppercase tracking-wider mt-2 flex items-center gap-1.5">
-                                       <span className="w-1.5 h-1.5 bg-[#cbd5e1] rounded-full"></span>
-                                       {d.telegramChatId === 'NOT_SET' ? 'LINK MISSING' : `CHAT REF: ${d.telegramChatId}`}
+                                     <p className="font-[700] text-[#0f172a] text-[14px] tracking-tight leading-none group-hover:text-[#1768d1] transition-colors">{d.residentId?.name || d.residentName}</p>
+                                     <p className="text-[10px] text-[#94a3b8] font-[700] uppercase tracking-wider mt-2">
+                                       {d.residentId?.village || 'Unknown Village'}
                                      </p>
                                   </div>
                                </div>
                             </td>
                             <td className="px-6 py-5 text-center">
                                <span className="text-[11px] font-mono font-[800] text-[#475569] bg-[#f1f5f9] px-2.5 py-1.5 rounded-[5px] border border-[#dfe7f1] shadow-sm">
-                                 {((d.distanceFromElephant || 0) / 1000).toFixed(2)} KM
+                                 {formatDistance(d.distanceToDetectionMeters)}
                                </span>
                             </td>
                             <td className="px-6 py-5">
                                <div className="flex flex-col gap-2">
                                   <div className={`badge w-fit px-3 font-[800] text-[10px] tracking-widest ${
-                                    d.status === 'sent' ? 'badge-success bg-[#edfcf4] text-[#0e7a42] border-[#b7efcf]' : 
-                                    (d.status === 'failed' || d.status === 'not_sent') ? 'badge-danger bg-[#fff1f1] text-[#c81e1e] border-[#facaca]' : 'badge-warning bg-[#fff9e8] text-[#b76300] border-[#f8d68a]'
+                                    d.notificationStatus === 'sent' ? 'badge-success bg-[#edfcf4] text-[#0e7a42] border-[#b7efcf]' : 
+                                    d.notificationStatus === 'failed' ? 'badge-danger bg-[#fff1f1] text-[#c81e1e] border-[#facaca]' : 'badge-warning bg-[#fff9e8] text-[#b76300] border-[#f8d68a]'
                                   } rounded-[5px]`}>
-                                    {d.status === 'not_sent' ? 'FILTERED' : d.status.toUpperCase()}
+                                    {d.notificationStatus.toUpperCase()}
                                   </div>
-                                  {d.reason && (
-                                    <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-tight truncate max-w-[150px]" title={d.reason}>
-                                      {(d.reason || '').replace(/_/g, ' ')}
-                                    </p>
-                                  )}
                                 </div>
                             </td>
                             <td className="px-6 py-5 text-right">
-                               {d.status === 'sent' ? (
+                               {d.notificationStatus === 'sent' ? (
                                  <div className="text-right">
                                     <p className="text-[11px] font-[800] text-[#0e7a42] tracking-wider leading-none">
                                       {safeFormat(d.sentAt, 'HH:mm:ss')}
                                     </p>
-                                    <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-[0.1em] mt-1.5">VERIFIED RELAY</p>
+                                    <p className="text-[9px] font-[700] text-[#94a3b8] uppercase mt-1.5">Delivered</p>
                                  </div>
                                ) : (
                                  <button 
                                    onClick={() => handleResendSingle(d._id)}
-                                   disabled={d.status === 'retrying'}
-                                   className="h-9 px-4 bg-[#0f172a] text-white rounded-[5px] hover:bg-[#1768d1] transition-all shadow-md flex items-center justify-center gap-2 font-[800] text-[10px] uppercase tracking-widest ml-auto active:scale-95 disabled:opacity-50"
+                                   disabled={d.notificationStatus === 'retrying'}
+                                   className="h-9 px-4 bg-[#0f172a] text-white rounded-[5px] hover:bg-[#1768d1] transition-all shadow-md flex items-center justify-center gap-2 font-[800] text-[10px] uppercase tracking-widest ml-auto"
                                  >
-                                   {d.status === 'retrying' ? <RefreshCw className="animate-spin" size={12} /> : <RotateCcw size={12} />}
-                                   {d.status === 'not_sent' ? 'SYNC' : 'RETRY'}
+                                   {d.notificationStatus === 'retrying' ? <RefreshCw className="animate-spin" size={12} /> : <RotateCcw size={12} />}
+                                   Retry
                                  </button>
                                )}
                             </td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                     </table>
                   )}
@@ -474,8 +495,8 @@ const NotificationDashboard = () => {
                  <ShieldAlert size={56} className="group-hover:text-[#2878e8] transition-colors duration-700" />
               </div>
               <div className="text-center space-y-3 opacity-40">
-                 <h2 className="text-[18px] font-[800] text-[#0f172a] uppercase tracking-[0.2em]">Operational Tracking Interface</h2>
-                 <p className="text-[#64748b] text-[12px] font-[600] max-w-sm mx-auto leading-relaxed uppercase tracking-widest">Select an active operational deployment from the tactical log to verify community relay integrity and geofence telemetry.</p>
+                 <h2 className="text-[18px] font-[800] text-[#0f172a] uppercase tracking-[0.2em]">Delivery Tracking</h2>
+                 <p className="text-[#64748b] text-[12px] font-[600] max-w-sm mx-auto leading-relaxed uppercase tracking-widest">Select a detection event from the log to verify alert delivery and community response.</p>
               </div>
             </div>
           )}

@@ -25,6 +25,10 @@ const io = socketio(server, {
 // Pass socket.io to app
 app.set('socketio', io);
 
+// Initialize Telegram Service with io
+const { init: initTelegram } = require('./services/telegramService');
+initTelegram(io);
+
 // Middleware
 app.use(express.json());
 app.use(cors());
@@ -36,7 +40,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/guards', require('./routes/guardRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/alerts', require('./routes/alertRoutes'));
+app.use('/api/detections', require('./routes/alertRoutes'));
 app.use('/api/deliveries', require('./routes/deliveryRoutes'));
 
 // Root route

@@ -7,12 +7,13 @@ import MainLayout from '../layouts/MainLayout';
 import Home from '../pages/Home';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
+import VerifyEmail from '../pages/VerifyEmail';
 import ForgotPassword from '../pages/ForgotPassword';
 import Dashboard from '../pages/Dashboard';
 import LiveMap from '../pages/LiveMap';
 import Detection from '../pages/Detection';
 import UserManagement from '../pages/UserManagement';
-import AlertHistory from '../pages/AlertHistory';
+import DetectionHistory from '../pages/AlertHistory';
 import Profile from '../pages/Profile';
 import NotificationDashboard from '../pages/NotificationDashboard';
 
@@ -44,6 +45,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Login />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Register />} />
+      <Route path="/register/verify-email" element={isAuthenticated ? <Navigate to="/dashboard" /> : <VerifyEmail />} />
       <Route path="/forgot-password" element={isAuthenticated ? <Navigate to="/dashboard" /> : <ForgotPassword />} />
       
       {/* Protected Guard Dashboard Routes */}
@@ -52,7 +54,7 @@ const AppRoutes = () => {
         <Route path="map" element={<LiveMap />} />
         <Route path="map/:alertId" element={<LiveMap />} />
         <Route path="detection" element={<Detection />} />
-        <Route path="history" element={<AlertHistory />} />
+        <Route path="history" element={<DetectionHistory />} />
         <Route path="delivery" element={<NotificationDashboard />} />
         <Route path="register-user" element={<UserManagement />} />
         <Route path="profile" element={<Profile />} />

@@ -1,8 +1,15 @@
 const mongoose = require('mongoose');
 
 const alertSchema = new mongoose.Schema({
-  image: {
-    type: String,
+  detectionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Detection',
+    required: true,
+    unique: true,
+  },
+  guardId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Guard',
     required: true,
   },
   location: {
@@ -15,68 +22,36 @@ const alertSchema = new mongoose.Schema({
       type: [Number], // [longitude, latitude]
       required: true,
     },
-    locationName: String,
   },
-  confidence: {
+  detectedAt: {
+    type: Date,
+    required: true,
+  },
+  generatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+  status: {
+    type: String,
+    enum: ['active', 'cleared', 'closed'],
+    default: 'active',
+  },
+  linkedResidentCount: {
     type: Number,
     default: 0,
   },
-  insidePatrolArea: {
-    type: Boolean,
-    default: false,
+  eligibleResidentCount: {
+    type: Number,
+    default: 0,
   },
-  notificationEligible: {
-    type: Boolean,
-    default: false,
+  notificationSummary: {
+    sent: { type: Number, default: 0 },
+    failed: { type: Number, default: 0 },
+    pending: { type: Number, default: 0 },
+    not_sent: { type: Number, default: 0 },
   },
-  eligibilityReason: {
-    type: String,
-    default: '',
-  },
-  alertStatus: {
-    type: String,
-    enum: ['new', 'acknowledged', 'resolved', 'dismissed'],
-    default: 'new',
-  },
-  notes: {
-    type: String,
-    default: '',
-  },
-  detectedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Guard',
-    required: true,
-  },
-  detectedAt: {
-  type: Date,
-  default: Date.now,
-  },
-  affectedResidentIds: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-  notificationStatus: {
-  type: String,
-  enum: ['pending', 'sent', 'failed', 'partial', 'none'],
-  default: 'pending',
-  },
-  recipientCount: {
-  type: Number,
-  default: 0,
-  },
-  sentAt: {
-  type: Date,
-  },
-  detectionSessionId: {
-    type: String,
-    unique: true,
-    sparse: true,
-    index: true
-  }
-  }, {
+}, {
   timestamps: true,
-  });
-// Index for map queries
-alertSchema.index({ location: '2dsphere' });
+});
 
 module.exports = mongoose.model('Alert', alertSchema);

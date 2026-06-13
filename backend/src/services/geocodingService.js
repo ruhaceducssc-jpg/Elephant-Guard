@@ -31,22 +31,30 @@ const getReadableLocation = async (lat, lng) => {
 
 /**
  * Calculate distance between two points in meters using Haversine formula
- * @param {number} lat1 - Latitude point 1
- * @param {number} lon1 - Longitude point 1
- * @param {number} lat2 - Latitude point 2
- * @param {number} lon2 - Longitude point 2
- * @returns {number} - Distance in meters
+ * @param {number} latitude1 - Latitude point 1
+ * @param {number} longitude1 - Longitude point 1
+ * @param {number} latitude2 - Latitude point 2
+ * @param {number} longitude2 - Longitude point 2
+ * @returns {number|null} - Distance in meters
  */
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth radius in meters
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
-  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+const calculateDistance = (latitude1, longitude1, latitude2, longitude2) => {
+  const values = [latitude1, longitude1, latitude2, longitude2].map(Number);
 
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-          Math.cos(phi1) * Math.cos(phi2) *
-          Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  if (!values.every(Number.isFinite)) {
+    return null;
+  }
+
+  const [lat1, lon1, lat2, lon2] = values;
+
+  const R = 6371e3; // Earth radius in meters
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
