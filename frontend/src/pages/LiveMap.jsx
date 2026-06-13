@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle, Polygon, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import api from '../services/api';
 import { format, isValid } from 'date-fns';
 import { 
   ShieldAlert, MapPin, Clock, Navigation, Zap, 
-  AlertTriangle, Layers, Maximize, X, Shield, CheckCircle, User, Send, Home, Activity
+  AlertTriangle, Layers, Maximize, X, Shield, CheckCircle, User, Send, Home, Activity, Phone
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -52,6 +52,34 @@ const normalizeDetection = (record) => {
 };
 
 /**
+ * Robust resident normalization helper
+ */
+const normalizeResident = (record) => {
+  if (!record) return null;
+
+  const resident = record.resident || record.residentId || record;
+  const coordinates = resident.areaLocation?.coordinates || resident.location?.coordinates || resident.coordinates;
+
+  const longitude = Number(coordinates?.[0] ?? resident.longitude ?? resident.lng);
+  const latitude = Number(coordinates?.[1] ?? resident.latitude ?? resident.lat);
+
+  const geofenceRadiusMeters = Number(
+    resident.geofenceRadiusMeters ?? 
+    resident.geofenceRadius ?? 
+    resident.radiusMeters ?? 
+    resident.radius
+  );
+
+  return {
+    ...resident,
+    _id: resident._id?.toString(),
+    latitude,
+    longitude,
+    geofenceRadiusMeters
+  };
+};
+
+/**
  * Coordinate validation helper
  */
 const isValidLocation = (lat, lng) => {
@@ -62,6 +90,15 @@ const isValidLocation = (lat, lng) => {
     lng >= -180 && lng <= 180 &&
     !(lat === 0 && lng === 0)
   );
+};
+
+const MapEvents = ({ onClick }) => {
+  useMapEvents({
+    click() {
+      onClick();
+    },
+  });
+  return null;
 };
 
 const ChangeView = ({ center, zoom }) => {
@@ -94,13 +131,25 @@ const LiveMap = () => {
   
   const [detections, setDetections] = useState([]);
   const [residents, setResidents] = useState([]);
-  const [selectedMapObject, setSelectedMapObject] = useState(null);
+  const [selectedResidentId, setSelectedResidentId] = useState(null);
+  const [selectedDetectionId, setSelectedDetectionId] = useState(null);
   const [highlightedDetectionId, setHighlightedDetectionId] = useState(null);
   
   const [userLocation, setUserLocation] = useState(null);
   const [mapCenter, setMapCenter] = useState([7.8731, 80.7718]);
   const [zoom, setZoom] = useState(8);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Derived selections
+  const selectedResident = residents.find(r => String(r._id) === String(selectedResidentId));
+  const selectedDetection = detections.find(d => String(d.id) === String(selectedDetectionId));
+
+  // Unified object for the details panel
+  const selectedMapObject = selectedResident 
+    ? { type: 'resident', id: selectedResident._id, data: selectedResident }
+    : selectedDetection 
+      ? { type: 'elephant', id: selectedDetection.id, data: selectedDetection }
+      : null;
 
   // Professional Elephant Marker Icon Generator
   const getElephantIcon = (isHighlighted) => L.divIcon({
@@ -153,7 +202,8 @@ const LiveMap = () => {
     const normalized = normalizeDetection(det);
     if (!normalized) return;
 
-    setSelectedMapObject({ type: 'elephant', id: normalized.id, data: normalized });
+    setSelectedDetectionId(normalized.id);
+    setSelectedResidentId(null);
     setHighlightedDetectionId(normalized.id);
     
     if (isValidLocation(normalized.latitude, normalized.longitude)) {
@@ -167,11 +217,15 @@ const LiveMap = () => {
     }, 2500);
   }, []);
 
-  const handleResidentSelect = useCallback((resident) => {
-    setSelectedMapObject({ type: 'resident', id: resident._id, data: resident });
-    const coords = resident.areaLocation?.coordinates || [resident.longitude, resident.latitude];
-    if (coords && isValidLocation(coords[1], coords[0])) {
-      setMapCenter([coords[1], coords[0]]);
+  const handleResidentSelect = useCallback((res) => {
+    const normalized = normalizeResident(res);
+    if (!normalized) return;
+
+    setSelectedResidentId(normalized._id);
+    setSelectedDetectionId(null);
+    
+    if (isValidLocation(normalized.latitude, normalized.longitude)) {
+      setMapCenter([normalized.latitude, normalized.longitude]);
       setZoom(16);
     }
   }, []);
@@ -188,16 +242,20 @@ const LiveMap = () => {
         .map(normalizeDetection)
         .filter(d => d && isValidLocation(d.latitude, d.longitude));
 
-      const residentsData = Array.isArray(residentsRes.data) ? residentsRes.data : [];
+      // Handle the new response shape { success: true, residents: [...] }
+      const residentsDataRaw = residentsRes.data?.residents || residentsRes.data || [];
+      const normalizedResidents = (Array.isArray(residentsDataRaw) ? residentsDataRaw : [])
+        .map(normalizeResident)
+        .filter(r => r && isValidLocation(r.latitude, r.longitude));
       
       setDetections(normalizedDetections);
-      setResidents(residentsData);
+      setResidents(normalizedResidents);
       
       // Focus Logic: URL Params
       const focusDetectionId = alertId || queryDetectionId;
       
       if (queryResidentId) {
-        const targetRes = residentsData.find(r => r._id === queryResidentId);
+        const targetRes = normalizedResidents.find(r => r._id === queryResidentId);
         if (targetRes) {
           handleResidentSelect(targetRes);
         }
@@ -303,7 +361,8 @@ const LiveMap = () => {
   };
 
   const clearSelection = () => {
-    setSelectedMapObject(null);
+    setSelectedResidentId(null);
+    setSelectedDetectionId(null);
   };
 
   return (
@@ -316,13 +375,14 @@ const LiveMap = () => {
           zoom={zoom} 
           className="h-full w-full z-0"
           zoomControl={false}
-          onClick={clearSelection}
         >
           <ChangeView center={mapCenter} zoom={zoom} />
           <ResizeMap />
           <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
           <ZoomControl position="bottomright" />
           
+          <MapEvents onClick={clearSelection} />
+
           {userLocation && (
             <Marker position={[userLocation.lat, userLocation.lng]}>
               <Circle center={[userLocation.lat, userLocation.lng]} radius={userLocation.accuracy} pathOptions={{ color: '#0b2d63', weight: 1, fillOpacity: 0.1 }} />
@@ -334,7 +394,7 @@ const LiveMap = () => {
             <Marker 
               key={det.id}
               position={[det.latitude, det.longitude]}
-              icon={getElephantIcon(highlightedDetectionId === det.id || selectedMapObject?.id === det.id)}
+              icon={getElephantIcon(highlightedDetectionId === det.id || selectedDetectionId === det.id)}
               eventHandlers={{
                 click: (e) => {
                   L.DomEvent.stopPropagation(e);
@@ -358,40 +418,38 @@ const LiveMap = () => {
           ))}
 
           {/* Resident Markers */}
-          {residents.map((resident) => {
-            const coords = resident?.areaLocation?.coordinates || [resident?.longitude, resident?.latitude];
-            if (!coords || !isValidLocation(coords[1], coords[0])) return null;
+          {residents.map((resident) => (
+            <Marker 
+              key={resident._id}
+              position={[resident.latitude, resident.longitude]}
+              icon={houseIcon}
+              eventHandlers={{
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  handleResidentSelect(resident);
+                },
+              }}
+            >
+              <Popup className="custom-popup">
+                <div className="p-4 space-y-1">
+                   <p className="font-[800] text-[#1768d1] uppercase text-[12px] tracking-widest leading-tight">{resident.name}</p>
+                   <p className="text-[10px] text-[#64748b] font-[700] uppercase tracking-widest">{resident.village}</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
 
-            return (
-              <Marker 
-                key={resident._id}
-                position={[coords[1], coords[0]]}
-                icon={houseIcon}
-                eventHandlers={{
-                  click: (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    handleResidentSelect(resident);
-                  },
-                }}
-              >
-                <Popup className="custom-popup">
-                  <div className="p-4 space-y-1">
-                     <p className="font-[800] text-[#1768d1] uppercase text-[12px] tracking-widest leading-tight">{resident.name}</p>
-                     <p className="text-[10px] text-[#64748b] font-[700] uppercase tracking-widest">{resident.village}</p>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
-
-          {selectedMapObject?.type === 'resident' && (
+          {selectedResident && (
             <Circle 
-              center={[
-                selectedMapObject.data.areaLocation?.coordinates?.[1] || selectedMapObject.data.latitude,
-                selectedMapObject.data.areaLocation?.coordinates?.[0] || selectedMapObject.data.longitude
-              ]} 
-              radius={selectedMapObject.data.geofenceRadiusMeters || 1000} 
-              pathOptions={{ color: '#1768d1', fillColor: '#2878e8', fillOpacity: 0.14, opacity: 0.85, weight: 2 }} 
+              center={[selectedResident.latitude, selectedResident.longitude]} 
+              radius={selectedResident.geofenceRadiusMeters || 1000} 
+              pathOptions={{ 
+                color: '#1768d1', 
+                fillColor: '#2878e8', 
+                fillOpacity: 0.14, 
+                opacity: 0.85, 
+                weight: 2 
+              }} 
             />
           )}
 
@@ -479,6 +537,13 @@ const MarkerDetailsPanel = ({ type, data, onClose, safeFormat, onGoToAlert }) =>
   const latitude = isAlert ? data.latitude : (data.areaLocation?.coordinates?.[1] || data.latitude);
   const longitude = isAlert ? data.longitude : (data.areaLocation?.coordinates?.[0] || data.longitude);
 
+  const formatRadius = (radiusMeters) => {
+    const radius = Number(radiusMeters);
+    if (!Number.isFinite(radius) || radius <= 0) return "Not configured";
+    if (radius < 1000) return `${Math.round(radius)} m`;
+    return `${(radius / 1000).toFixed(2)} km`;
+  };
+
   return (
     <div className="card h-full flex flex-col bg-white border-[#dfe7f1] box-border">
       <div className="bg-[#f8fafc] border-b border-[#dfe7f1] px-6 py-[18px] flex items-center justify-between shrink-0">
@@ -543,9 +608,10 @@ const MarkerDetailsPanel = ({ type, data, onClose, safeFormat, onGoToAlert }) =>
          <div className="space-y-0.5">
             {[
               { icon: isAlert ? <MapPin /> : <Navigation />, label: isAlert ? 'Location' : 'Village', value: isAlert ? data.locationName : data.village },
+              !isAlert && { icon: <Phone />, label: 'Contact', value: data.phone || 'N/A' },
               { icon: isAlert ? <Clock /> : <Send />, label: isAlert ? 'Time' : 'Telegram ID', value: isAlert ? safeFormat(data.detectedAt, 'PP p') : (data.telegramChatId || 'NOT LINKED') },
               { icon: <Maximize />, label: 'Coordinates', value: latitude && longitude ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` : 'N/A' },
-              !isAlert && { icon: <Layers />, label: 'Geofence Radius', value: `${data.geofenceRadiusMeters || 1000} Meters` }
+              !isAlert && { icon: <Layers />, label: 'Geofence Radius', value: formatRadius(data.geofenceRadiusMeters) }
             ].filter(Boolean).map((item, i) => (
               <div key={i} className="flex items-center gap-4 py-4 border-b border-[#edf1f6] last:border-0">
                  <div className="w-10 h-10 bg-[#f4f8ff] text-[#1768d1] rounded-[5px] flex items-center justify-center shrink-0 border border-[#eaf2ff]">

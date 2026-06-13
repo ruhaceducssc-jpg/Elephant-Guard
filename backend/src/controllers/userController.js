@@ -11,6 +11,14 @@ exports.createUser = async (req, res) => {
   }
 
   try {
+    // Check if user with phone already exists
+    const userExists = await User.findOne({ phone });
+    if (userExists) {
+      return res.status(409).json({ 
+        message: `A resident with phone number ${phone} is already registered.` 
+      });
+    }
+
     const user = await User.create({
       name,
       phone,
@@ -28,6 +36,11 @@ exports.createUser = async (req, res) => {
 
     res.status(201).json(user);
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ 
+        message: 'A resident with this phone number is already registered.' 
+      });
+    }
     res.status(400).json({ message: error.message });
   }
 };
@@ -38,7 +51,10 @@ exports.createUser = async (req, res) => {
 exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({ registeredBy: req.guard._id }).populate('registeredBy', 'name');
-    res.json(users);
+    res.json({
+      success: true,
+      residents: users
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -69,8 +85,18 @@ exports.updateUser = async (req, res) => {
     const user = await User.findById(req.params.id);
 
     if (user) {
+      // Check if phone number is being changed and if new one already exists
+      if (req.body.phone && req.body.phone !== user.phone) {
+        const phoneExists = await User.findOne({ phone: req.body.phone });
+        if (phoneExists) {
+          return res.status(409).json({ 
+            message: `A resident with phone number ${req.body.phone} is already registered.` 
+          });
+        }
+        user.phone = req.body.phone;
+      }
+
       user.name = req.body.name || user.name;
-      user.phone = req.body.phone || user.phone;
       user.telegramChatId = req.body.telegramChatId || user.telegramChatId;
       user.village = req.body.village || user.village;
       

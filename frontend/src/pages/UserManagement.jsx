@@ -40,7 +40,9 @@ const UserManagement = () => {
     setIsLoading(true);
     try {
       const { data } = await api.get('/users');
-      setUsers(data);
+      // Handle { success: true, residents: [...] } response shape
+      const residents = data?.residents || data || [];
+      setUsers(Array.isArray(residents) ? residents : []);
     } catch (error) {
       toast.error('Failed to sync resident database');
     } finally {

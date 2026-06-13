@@ -21,7 +21,8 @@ const Login = () => {
       toast.success('Login successful. Welcome back.');
       navigate('/dashboard');
     } catch (error) {
-      toast.error('Authentication failed: Invalid credentials');
+      const message = error.response?.data?.message || 'Authentication failed: Invalid credentials';
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }

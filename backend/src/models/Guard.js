@@ -75,7 +75,6 @@ const guardSchema = new mongoose.Schema({
     type: {
       type: String,
       enum: ['Polygon'],
-      default: 'Polygon',
     },
     coordinates: {
       type: [[[Number]]], // Array of linear rings, each a list of [lng, lat]
@@ -124,9 +123,11 @@ guardSchema.pre('save', async function (next) {
   // Bcrypt hashes start with $2a$, $2b$, or $2y$ and are 60 characters long
   const isAlreadyHashed = /^\$2[ayb]\$.{56}$/.test(this.password);
   if (isAlreadyHashed) {
+    console.log(`Password for ${this.email} already hashed, skipping.`);
     return next();
   }
 
+  console.log(`Hashing password for ${this.email}...`);
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });

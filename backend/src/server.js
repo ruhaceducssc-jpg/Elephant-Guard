@@ -36,6 +36,17 @@ app.use(cors());
 // Static folder for uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  const mongoose = require('mongoose');
+  res.json({
+    success: true,
+    status: 'ok',
+    databaseConnected: mongoose.connection.readyState === 1,
+    timestamp: new Date()
+  });
+});
+
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/guards', require('./routes/guardRoutes'));

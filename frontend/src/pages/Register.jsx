@@ -33,22 +33,9 @@ const Register = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const data = await register({ ...formData, patrolArea });
-      if (data.requiresEmailVerification) {
-        toast.success('Validation identity sent. Verify your email.');
-        // Store session info temporarily for the verification page
-        sessionStorage.setItem('pendingVerification', JSON.stringify({
-          verificationSessionId: data.verificationSessionId,
-          maskedEmail: data.maskedEmail,
-          expiresInSeconds: data.expiresInSeconds,
-          resendAvailableInSeconds: data.resendAvailableInSeconds
-        }));
-        navigate('/register/verify-email');
-      } else {
-        // Fallback if verification is somehow skipped by backend
-        toast.success('Registration successful.');
-        navigate('/dashboard');
-      }
+      await register({ ...formData, patrolArea });
+      toast.success('Guard account created successfully. You can now log in.');
+      navigate('/login');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Registration failed');
     } finally {
