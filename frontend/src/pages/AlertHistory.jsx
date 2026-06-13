@@ -71,47 +71,46 @@ const AlertHistory = () => {
   });
 
   return (
-    <div className="space-y-10 pb-12 page-fade-in">
+    <div className="space-y-[22px] pb-12 page-fade-in max-w-[1920px] mx-auto">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-1">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-             <FileText className="text-primary-600" size={28} />
-             Alert <span className="text-primary-600">History</span>
+          <h1 className="text-[28px] font-[800] text-[#0f172a] tracking-tight">
+            Lanka Beacon <span className="text-[#1768d1]">Alert History</span>
           </h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Comprehensive archive of all historical detections</p>
+          <p className="text-[#64748b] text-[11px] font-[700] mt-1.5 uppercase tracking-widest">Comprehensive Command Center archive of historical detections</p>
         </div>
         <div className="flex items-center gap-3">
-           <button className="btn btn-secondary px-6">
-              <Download size={18} />
-              Export Data
+           <button className="h-11 px-6 bg-white border border-[#dfe7f1] text-[#334155] rounded-[5px] font-[700] text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-[#f8fafc] transition-all shadow-sm">
+              <Download size={16} />
+              Export Alert Dataset
            </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-[14px]">
         {/* Filter & List Panel */}
-        <div className="lg:col-span-8 space-y-6">
-           <div className="bg-white p-4 flex flex-col md:flex-row gap-4 items-center justify-between rounded-2xl border border-slate-200 shadow-soft">
+        <div className="lg:col-span-8 space-y-[14px]">
+           <div className="card p-3 flex flex-col md:flex-row gap-3 items-center justify-between border-[#dfe7f1]">
               <div className="relative flex-1 w-full">
-                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#cbd5e1]" size={18} />
                  <input 
                    type="text" 
-                   placeholder="Search locations..." 
+                   placeholder="Search detection nodes..." 
                    value={searchTerm}
                    onChange={(e) => setSearchTerm(e.target.value)}
-                   className="input pl-12"
+                   className="h-11 pl-12 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all"
                  />
               </div>
-              <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+              <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto p-1 bg-[#f1f5f9] rounded-[5px]">
                  {['all', 'active', 'cleared'].map(status => (
                    <button
                      key={status}
                      onClick={() => setStatusFilter(status)}
-                     className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all shrink-0 ${
+                     className={`h-9 px-5 rounded-[5px] font-[800] text-[10px] uppercase tracking-widest transition-all shrink-0 ${
                        statusFilter === status 
-                         ? 'bg-primary-600 text-white shadow-lg shadow-primary-200' 
-                         : 'bg-slate-50 border border-slate-100 text-slate-500 hover:bg-slate-100'
+                         ? 'bg-white text-[#1768d1] shadow-sm' 
+                         : 'text-[#64748b] hover:text-[#0f172a]'
                      }`}
                    >
                      {status}
@@ -120,13 +119,13 @@ const AlertHistory = () => {
               </div>
            </div>
 
-           <div className="space-y-3">
+           <div className="space-y-[10px]">
               {isLoading ? (
-                Array(5).fill(0).map((_, i) => <div key={i} className="h-20 bg-white rounded-2xl animate-pulse border border-slate-100"></div>)
+                Array(6).fill(0).map((_, i) => <div key={i} className="h-[100px] card bg-slate-50 animate-pulse border-slate-100"></div>)
               ) : filteredAlerts.length === 0 ? (
-                <div className="bg-white p-20 text-center space-y-4 rounded-3xl border border-slate-200 border-dashed">
-                   <Activity size={40} className="text-slate-200 mx-auto" />
-                   <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No history found for current filters</p>
+                <div className="card py-24 text-center space-y-5 border-dashed border-[#dfe7f1] bg-[#f8fafc]/30">
+                   <Activity size={40} className="text-[#cbd5e1] mx-auto" />
+                   <p className="text-[#64748b] font-[800] uppercase tracking-widest text-[11px]">Historical records null for selected filter</p>
                 </div>
               ) : (
                 filteredAlerts.map(alert => (
@@ -134,47 +133,53 @@ const AlertHistory = () => {
                     key={alert.id || alert._id}
                     ref={el => scrollRefs.current[alert.id || alert._id] = el}
                     onClick={() => setSelectedAlert(alert)}
-                    className={`bg-white p-4 rounded-2xl border flex items-center justify-between cursor-pointer group transition-all duration-300 ${
+                    className={`card p-5 flex items-center justify-between cursor-pointer group transition-all border ${
                       (selectedAlert?.id === alert.id || selectedAlert?._id === alert._id)
-                        ? 'border-primary-500 bg-primary-50/30'
-                        : 'border-slate-100 hover:border-slate-300 shadow-soft'
+                        ? 'border-[#1768d1] bg-[#eaf2ff]/30 shadow-md'
+                        : 'border-[#dfe7f1] bg-white hover:border-[#1768d1]/30 hover:bg-[#f8fafc]'
                     }`}
                   >
-                    <div className="flex items-center gap-5">
-                       <div className="w-14 h-14 bg-slate-50 rounded-xl overflow-hidden border border-slate-100 shrink-0 group-hover:scale-105 transition-transform">
+                    <div className="flex items-center gap-6">
+                       <div className="w-20 h-20 bg-[#f1f5f9] rounded-[5px] overflow-hidden border border-[#dfe7f1] shrink-0 shadow-sm relative">
                           <img 
-                            src={alert.image ? (alert.image.startsWith('http') ? alert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${alert.image}`) : 'https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?auto=format&fit=crop&q=80&w=200'} 
-                            className="w-full h-full object-cover" 
+                            src={alert.image ? (alert.image.startsWith('http') ? alert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${alert.image}`) : '/assets/images/elephant-fallback.jpg'} 
+                            className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110" 
                             alt="Node" 
                           />
-                       </div>
-                       <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-primary-600 mb-0.5">
+                          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-[#0f172a]/80 backdrop-blur-md rounded-[3px] text-[8px] font-[800] text-white uppercase tracking-wider">
                              {(alert.confidence * 100).toFixed(0)}% Match
-                          </p>
-                          <h3 className="text-base font-bold text-slate-900 tracking-tight truncate max-w-[250px]">
+                          </div>
+                       </div>
+                       <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                             <div className={`w-2 h-2 rounded-full ${alert.alertStatus === 'active' ? 'bg-[#ef3535] animate-pulse' : 'bg-[#18b866]'}`}></div>
+                             <p className="text-[10px] font-[800] uppercase tracking-widest text-[#94a3b8]">System Identification Log</p>
+                          </div>
+                          <h3 className={`text-[17px] font-[800] tracking-tight truncate max-w-[320px] leading-tight ${
+                             (selectedAlert?.id === alert.id || selectedAlert?._id === alert._id) ? 'text-[#0b2d63]' : 'text-[#0f172a]'
+                          }`}>
                              {alert.locationName || alert.areaName}
                           </h3>
-                          <div className="flex items-center gap-4 mt-1 opacity-60">
-                             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                                <Calendar size={12} /> {safeFormat(alert.detectedAt, 'MMM dd, yyyy')}
+                          <div className="flex items-center gap-5 mt-2.5">
+                             <div className="flex items-center gap-2 text-[10px] font-[700] uppercase tracking-widest text-[#64748b]">
+                                <Calendar size={12} className="text-[#cbd5e1]" /> {safeFormat(alert.detectedAt, 'MMM dd, yyyy')}
                              </div>
-                             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                                <Clock size={12} /> {safeFormat(alert.detectedAt, 'HH:mm')}
+                             <div className="flex items-center gap-2 text-[10px] font-[700] uppercase tracking-widest text-[#64748b] border-l border-[#edf1f6] pl-5">
+                                <Clock size={12} className="text-[#cbd5e1]" /> {safeFormat(alert.detectedAt, 'HH:mm')}
                              </div>
                           </div>
                        </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                       <span className={`badge ${
-                         alert.alertStatus === 'active' ? 'badge-danger' : 'badge-success'
-                       }`}>
-                         {alert.alertStatus}
+                    <div className="flex items-center gap-4">
+                       <span className={`badge px-4 py-2 font-[800] text-[10px] tracking-widest ${
+                         alert.alertStatus === 'active' ? 'badge-danger bg-[#fff1f1] text-[#c81e1e] border-[#facaca]' : 'badge-success bg-[#edfcf4] text-[#0e7a42] border-[#b7efcf]'
+                       } rounded-[5px]`}>
+                         {alert.alertStatus.toUpperCase()}
                        </span>
                        <button 
                          onClick={(e) => { e.stopPropagation(); handleDelete(alert.id || alert._id); }}
-                         className="p-2.5 text-slate-300 hover:text-danger-600 hover:bg-danger-50 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100"
+                         className="w-10 h-10 flex items-center justify-center text-[#cbd5e1] hover:text-[#e02424] hover:bg-[#fff1f1] rounded-[5px] transition-all border border-transparent hover:border-[#facaca]"
                        >
                           <Trash2 size={16} />
                        </button>
@@ -186,38 +191,43 @@ const AlertHistory = () => {
         </div>
 
         {/* Detailed Intelligence Panel */}
-        <div className="lg:col-span-4 h-fit sticky top-24">
+        <div className="lg:col-span-4">
            {selectedAlert ? (
-             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-premium overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="bg-slate-50 p-6 border-b border-slate-100 relative">
-                   <h2 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-0.5">Alert Details</h2>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Historical Telemetry</p>
-                   <button onClick={() => setSelectedAlert(null)} className="absolute top-6 right-6 p-2 hover:bg-slate-200 text-slate-400 rounded-xl transition-colors">
+             <div className="card overflow-hidden animate-in fade-in slide-in-from-right-8 duration-500 sticky top-[108px] border-[#dfe7f1] bg-white">
+                <div className="bg-[#f8fafc] p-6 border-b border-[#dfe7f1] flex items-center justify-between">
+                   <div>
+                      <h2 className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em] leading-none mb-1.5">Intelligence Matrix</h2>
+                      <p className="text-[15px] font-[800] text-[#0f172a] leading-none">LOG REF: #{selectedAlert.id?.slice(-8).toUpperCase() || selectedAlert._id?.slice(-8).toUpperCase()}</p>
+                   </div>
+                   <button onClick={() => setSelectedAlert(null)} className="w-9 h-9 flex items-center justify-center hover:bg-[#f1f5f9] text-[#64748b] rounded-[5px] transition-colors border border-[#dfe7f1]">
                       <XCircle size={18} />
                    </button>
                 </div>
                 
-                <div className="p-8 space-y-8">
-                   <div className="aspect-[4/3] bg-slate-50 rounded-2xl overflow-hidden border border-slate-100 shadow-inner">
+                <div className="p-6 space-y-8 overflow-y-auto max-h-[calc(100vh-250px)] custom-scrollbar">
+                   <div className="w-full aspect-[4/3] bg-[#07111f] rounded-[5px] overflow-hidden border border-[#dfe7f1] shadow-lg relative group">
                       <img 
-                        src={selectedAlert.image ? (selectedAlert.image.startsWith('http') ? selectedAlert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${selectedAlert.image}`) : 'https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?auto=format&fit=crop&q=80&w=600'} 
-                        className="w-full h-full object-cover" 
+                        src={selectedAlert.image ? (selectedAlert.image.startsWith('http') ? selectedAlert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${selectedAlert.image}`) : '/assets/images/elephant-fallback.jpg'} 
+                        className="w-full h-full object-contain" 
                         alt="Detection" 
                       />
+                      <div className="absolute inset-0 bg-[#1768d1]/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                    </div>
 
-                   <div className="space-y-4">
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Detection Method</p>
-                         <p className="text-xs font-bold text-slate-700">AI Scanner v4.2</p>
-                      </div>
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Registered By</p>
-                         <p className="text-xs font-bold text-slate-700">{selectedAlert.detectedBy?.name || 'System'}</p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Coordinates</p>
-                         <p className="text-[10px] font-mono font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded-lg">
+                   <div className="space-y-1">
+                      {[
+                        { label: 'Neural Intelligence', value: 'AI COCO-SSD v4.2' },
+                        { label: 'Deployment Source', value: selectedAlert.detectedBy?.name || 'Automated Node' },
+                        { label: 'Patrol Boundary', value: selectedAlert.insidePatrolArea ? 'ZONE BREACHED' : 'EXTERIOR' },
+                      ].map((row, i) => (
+                        <div key={i} className="flex items-center justify-between py-4 border-b border-[#edf1f6] last:border-0">
+                           <p className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest">{row.label}</p>
+                           <p className={`text-[12px] font-[800] ${row.value.includes('BREACHED') ? 'text-[#e02424]' : 'text-[#334155]'}`}>{row.value}</p>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between py-5">
+                         <p className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest">GPS Coordinates</p>
+                         <p className="text-[11px] font-mono font-[800] text-[#1768d1] bg-[#eaf2ff] px-3 py-1.5 rounded-[5px] border border-[#1768d1]/20">
                             {selectedAlert.location?.coordinates ? `${selectedAlert.location.coordinates[1].toFixed(5)}, ${selectedAlert.location.coordinates[0].toFixed(5)}` : 'N/A'}
                          </p>
                       </div>
@@ -225,21 +235,21 @@ const AlertHistory = () => {
 
                    <button 
                      onClick={() => navigate(`/dashboard/map/${selectedAlert.id || selectedAlert._id}`)}
-                     className="w-full py-4 bg-primary-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-primary-700 transition-all shadow-lg shadow-primary-100 flex items-center justify-center gap-2"
+                     className="w-full h-14 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[13px] uppercase tracking-[0.2em] shadow-xl shadow-[#1768d1]/10 hover:bg-[#0f56b3] transition-all flex items-center justify-center gap-3"
                    >
-                      <ExternalLink size={16} />
-                      View on Map
+                      <ExternalLink size={18} />
+                      Open Tactical View
                    </button>
                 </div>
              </div>
            ) : (
-             <div className="bg-white p-12 text-center rounded-[2rem] border border-slate-200 border-dashed space-y-5">
-                <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto text-slate-200 border border-slate-100">
-                   <AlertCircle size={32} />
+             <div className="card py-32 text-center border-dashed border-[#dfe7f1] bg-[#f8fafc]/50 space-y-6 px-10">
+                <div className="w-20 h-20 bg-white rounded-[5px] flex items-center justify-center mx-auto text-[#cbd5e1] border border-[#dfe7f1] shadow-sm">
+                   <AlertCircle size={40} />
                 </div>
-                <div>
-                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest">Selection Required</h3>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5 max-w-[150px] mx-auto">Select a history record to view detailed intelligence.</p>
+                <div className="space-y-2">
+                   <h3 className="text-[13px] font-[800] text-[#0f172a] uppercase tracking-widest">Awaiting Tactical Selection</h3>
+                   <p className="text-[11.5px] text-[#64748b] font-[500] leading-relaxed uppercase tracking-wider">Select a historical record from the log to initialize telemetry readout</p>
                 </div>
              </div>
            )}

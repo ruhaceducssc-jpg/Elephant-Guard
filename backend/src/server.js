@@ -41,7 +41,7 @@ app.use('/api/deliveries', require('./routes/deliveryRoutes'));
 
 // Root route
 app.get('/', (req, res) => {
-  res.send('Elephant Alert API is running...');
+  res.send('Lanka Beacon API is running...');
 });
 
 // Error Handler

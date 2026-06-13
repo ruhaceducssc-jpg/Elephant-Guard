@@ -25,6 +25,14 @@ const alertSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  notificationEligible: {
+    type: Boolean,
+    default: false,
+  },
+  eligibilityReason: {
+    type: String,
+    default: '',
+  },
   alertStatus: {
     type: String,
     enum: ['new', 'acknowledged', 'resolved', 'dismissed'],
@@ -59,6 +67,12 @@ const alertSchema = new mongoose.Schema({
   sentAt: {
   type: Date,
   },
+  detectionSessionId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true
+  }
   }, {
   timestamps: true,
   });

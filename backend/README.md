@@ -1,14 +1,17 @@
-# Elephant Alert Sri Lanka Backend
+# Lanka Beacon Backend
 
-This is the backend system for the Elephant Alert Sri Lanka university project. It handles Guard authentication, resident management, and real-time elephant detection alerts with Telegram integration.
+Lanka Beacon — AI-Powered Elephant Early Warning and Community Safety System.
+
+This is the backend system for the Lanka Beacon platform. It handles Guard authentication, community resident management, and real-time elephant detection alerts with Telegram integration.
 
 ## Features
 - JWT Authentication for Guards
-- Resident (Public User) management with GPS locations
+- Community Resident management with GPS geofencing
 - Elephant detection alert processing (Image upload + GPS)
 - Real-time notifications via Socket.io
 - Automatic Telegram alerts to nearby residents
-- Geo-spatial queries with MongoDB
+- Geo-spatial queries with MongoDB (2dsphere)
+- Delivery tracking and notification logs
 
 ## Tech Stack
 - Node.js & Express.js
@@ -23,19 +26,19 @@ This is the backend system for the Elephant Alert Sri Lanka university project. 
 ### Auth (Guards)
 | Method | Endpoint | Description | Request Body |
 |--------|----------|-------------|--------------|
-| POST | `/api/auth/register` | Register a new guard | `{ name, email, password, assignedArea }` |
+| POST | `/api/auth/register` | Register a new guard | `{ name, email, password, assignedArea, patrolArea }` |
 | POST | `/api/auth/login` | Login and get JWT | `{ email, password }` |
 
-### Residents (Public Users)
+### Residents (Community Members)
 | Method | Endpoint | Description | Auth | Request Body |
 |--------|----------|-------------|------|--------------|
-| POST | `/api/users` | Add a resident | JWT | `{ name, phone, telegramChatId, longitude, latitude, village }` |
+| POST | `/api/users` | Add a resident | JWT | `{ name, phone, telegramChatId, longitude, latitude, village, areaName }` |
 | GET | `/api/users` | Get all residents | JWT | - |
 
 ### Alerts (Elephant Detections)
 | Method | Endpoint | Description | Auth | Request Body (Form Data) |
 |--------|----------|-------------|------|--------------------------|
-| POST | `/api/alerts` | Create new alert | JWT | `{ image (file), longitude, latitude, locationName, confidence }` |
+| POST | `/api/alerts` | Create new alert | JWT | `{ image (file), longitude, latitude, locationName, confidence, detectionSessionId }` |
 | GET | `/api/alerts` | Get all alerts | - | - |
 
 ## Setup Instructions
@@ -45,4 +48,5 @@ This is the backend system for the Elephant Alert Sri Lanka university project. 
 4. Run `npm run dev` to start the server.
 
 ## Socket.io Events
-- `new-elephant-alert`: Emitted to all clients when a new alert is created.
+- `new-elephant-alert`: Emitted to the guard room when a new alert is created.
+- `alert-updated`: Emitted when an alert status or notes are modified.

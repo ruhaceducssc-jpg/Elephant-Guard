@@ -24,7 +24,7 @@ if (token && isEnabled) {
     // Handle /start command
     bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
-      bot.sendMessage(chatId, "Welcome to Elephant Alert Sri Lanka! 🐘\n\nTo receive alerts, we need to link your Telegram account to your registration. Please click the button below to share your phone number.", {
+      bot.sendMessage(chatId, "Welcome to Lanka Beacon! 🐘\n\nTo receive alerts, we need to link your Telegram account to your registration. Please click the button below to share your phone number.", {
         reply_markup: {
           keyboard: [[{
             text: "📲 Share Phone Number",
@@ -59,7 +59,7 @@ if (token && isEnabled) {
         if (user) {
           user.telegramChatId = chatId.toString();
           await user.save();
-          bot.sendMessage(chatId, `✅ Success! Your account (User: ${user.name}) is now linked. You will receive elephant alerts for ${user.village}.`, {
+          bot.sendMessage(chatId, `✅ Success! Your account (User: ${user.name}) is now linked to Lanka Beacon. You will receive elephant alerts for ${user.village}.`, {
             reply_markup: { remove_keyboard: true }
           });
           return;
@@ -69,7 +69,7 @@ if (token && isEnabled) {
         // Note: Guard model doesn't have phone, so we might need to add it or skip this.
         // Assuming guards are linked manually for now as they use email/pass.
         
-        bot.sendMessage(chatId, "❌ We couldn't find a registered phone number matching yours. Please ensure you are registered on the Elephant Alert website first.", {
+        bot.sendMessage(chatId, "❌ We couldn't find a registered phone number matching yours. Please ensure you are registered on the Lanka Beacon website first.", {
           reply_markup: { remove_keyboard: true }
         });
       } catch (err) {

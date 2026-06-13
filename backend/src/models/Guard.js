@@ -81,6 +81,13 @@ const guardSchema = new mongoose.Schema({
       type: [[[Number]]], // Array of linear rings, each a list of [lng, lat]
     },
   },
+  patrolAreaUpdatedAt: {
+    type: Date,
+  },
+  patrolAreaPointCount: {
+    type: Number,
+    default: 0,
+  },
   accountStatus: {
     type: String,
     enum: ['active', 'suspended', 'on-leave'],
@@ -103,6 +110,9 @@ const guardSchema = new mongoose.Schema({
 }, {
   timestamps: true,
 });
+
+// Index for geo-spatial queries
+guardSchema.index({ patrolArea: '2dsphere' });
 
 // Encrypt password using bcrypt
 guardSchema.pre('save', async function (next) {

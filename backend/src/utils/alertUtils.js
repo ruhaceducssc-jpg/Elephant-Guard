@@ -46,6 +46,9 @@ const isPointInPolygon = (point, polygon) => {
   // Use the first linear ring (exterior)
   const coords = polygon.coordinates[0];
   
+  // Basic validation for polygon points
+  if (coords.length < 3) return false;
+
   let inside = false;
   for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
     const xi = coords[i][0], yi = coords[i][1];
@@ -59,7 +62,89 @@ const isPointInPolygon = (point, polygon) => {
   return inside;
 };
 
+/**
+ * Evaluates whether a resident is eligible for an alert based on combined conditions
+ * @param {Object} params - Evaluation parameters
+ * @returns {Object} - Detailed eligibility result
+ */
+const evaluateAlertEligibility = ({ elephantLocation, guardPatrolArea, resident }) => {
+  const [lng, lat] = elephantLocation.coordinates;
+  const { calculateDistance } = require('../services/geocodingService');
+
+  // 1. Check Guard Patrol Area
+  const insideGuardArea = isPointInPolygon([lng, lat], guardPatrolArea);
+  
+  if (!insideGuardArea) {
+    return {
+      insideGuardArea: false,
+      insideResidentGeofence: false,
+      eligible: false,
+      reason: 'outside_guard_area'
+    };
+  }
+
+  // 2. Check Resident Location
+  if (!resident.areaLocation || !resident.areaLocation.coordinates) {
+    return {
+      insideGuardArea: true,
+      insideResidentGeofence: false,
+      eligible: false,
+      reason: 'invalid_resident_location'
+    };
+  }
+
+  const [resLng, resLat] = resident.areaLocation.coordinates;
+  const radius = resident.geofenceRadiusMeters || 1000;
+  
+  const distance = calculateDistance(lat, lng, resLat, resLng);
+  const insideResidentGeofence = distance <= radius;
+
+  if (!insideResidentGeofence) {
+    return {
+      insideGuardArea: true,
+      insideResidentGeofence: false,
+      distanceToResidentMeters: Math.round(distance),
+      residentRadiusMeters: radius,
+      eligible: false,
+      reason: 'outside_resident_geofence'
+    };
+  }
+
+  // 3. Check Preferences
+  if (resident.notificationEnabled === false) {
+    return {
+      insideGuardArea: true,
+      insideResidentGeofence: true,
+      distanceToResidentMeters: Math.round(distance),
+      residentRadiusMeters: radius,
+      eligible: false,
+      reason: 'notifications_disabled'
+    };
+  }
+
+  if (!resident.telegramChatId) {
+    return {
+      insideGuardArea: true,
+      insideResidentGeofence: true,
+      distanceToResidentMeters: Math.round(distance),
+      residentRadiusMeters: radius,
+      eligible: false,
+      reason: 'missing_telegram_chat_id'
+    };
+  }
+
+  return {
+    insideGuardArea: true,
+    insideResidentGeofence: true,
+    distanceToResidentMeters: Math.round(distance),
+    residentRadiusMeters: radius,
+    eligible: true,
+    reason: 'inside_both_areas'
+  };
+};
+
 module.exports = {
   normalizeAlert,
-  isPointInPolygon
+  isPointInPolygon,
+  evaluateAlertEligibility
 };

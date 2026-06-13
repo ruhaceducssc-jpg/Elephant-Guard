@@ -12,7 +12,7 @@ const { normalizeAlert, isPointInPolygon } = require('../utils/alertUtils');
 // @route   POST /api/alerts
 // @access  Private
 exports.createAlert = async (req, res) => {
-  const { longitude, latitude, locationName, confidence } = req.body;
+  const { longitude, latitude, locationName, confidence, detectionSessionId } = req.body;
   const image = req.file ? req.file.filename : '';
 
   const lat = parseFloat(latitude);
@@ -22,37 +22,58 @@ exports.createAlert = async (req, res) => {
     return res.status(400).json({ message: 'Invalid GPS coordinates' });
   }
 
+  // Configuration for deduplication
+  const ALERT_DEDUPE_WINDOW_MS = parseInt(process.env.ALERT_DEDUPE_WINDOW_MS) || 60000;
+  const ALERT_DEDUPE_DISTANCE_METERS = parseInt(process.env.ALERT_DEDUPE_DISTANCE_METERS) || 100;
+
   try {
+    // 1. Check for an existing alert with the same detectionSessionId (Idempotency)
+    if (detectionSessionId) {
+      const existingById = await Alert.findOne({ detectionSessionId });
+      if (existingById) {
+        console.log(`Duplicate detectionSessionId detected: ${detectionSessionId}`);
+        return res.status(200).json({
+          ...normalizeAlert(existingById),
+          duplicate: true,
+          message: 'Detection event already processed'
+        });
+      }
+    }
+
+    // 2. Secondary deduplication check (Time and Location fallback)
+    const timeWindow = new Date(Date.now() - ALERT_DEDUPE_WINDOW_MS);
+    const existingNear = await Alert.findOne({
+      detectedBy: req.guard ? req.guard._id : null,
+      detectedAt: { $gte: timeWindow },
+      location: {
+        $near: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $maxDistance: ALERT_DEDUPE_DISTANCE_METERS
+        }
+      }
+    });
+
+    if (existingNear) {
+      console.log('Similar recent alert detected by backend nearby, skipping creation');
+      return res.status(200).json({
+        ...normalizeAlert(existingNear),
+        duplicate: true,
+        message: 'A similar alert was recently reported nearby'
+      });
+    }
+
     // Check if point is inside guard's patrol area
     let insidePatrolArea = false;
     if (req.guard && req.guard.patrolArea) {
       insidePatrolArea = isPointInPolygon([lng, lat], req.guard.patrolArea);
     }
 
-    // Deduplication check: Has this guard reported an elephant nearby in the last 2 minutes?
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-    const existingAlert = await Alert.findOne({
-      detectedBy: req.guard ? req.guard._id : null,
-      detectedAt: { $gte: twoMinutesAgo },
-      location: {
-        $near: {
-          $geometry: { type: "Point", coordinates: [lng, lat] },
-          $maxDistance: 500 // 500 meters radius
-        }
-      }
-    });
-
-    if (existingAlert) {
-      console.log('Duplicate alert detected by backend, skipping creation');
-      return res.status(200).json(normalizeAlert(existingAlert));
-    }
-
     let finalLocationName = locationName;
-    if (!finalLocationName || finalLocationName === 'Unknown Location' || finalLocationName === 'Live Patrol Scan' || finalLocationName === 'Analyzed Gallery Upload') {
+    if (!finalLocationName || finalLocationName === 'Unknown Location' || finalLocationName === 'Live Patrol Scan' || finalLocationName === 'Analyzed Gallery Upload' || finalLocationName === 'Automated Detection' || finalLocationName === 'Manual Deployment') {
       finalLocationName = await getReadableLocation(lat, lng);
     }
 
-    const alert = await Alert.create({
+    const alertData = {
       image,
       location: {
         type: 'Point',
@@ -62,7 +83,10 @@ exports.createAlert = async (req, res) => {
       confidence: parseFloat(confidence) || 0,
       detectedBy: req.guard ? req.guard._id : null,
       insidePatrolArea,
-    });
+      detectionSessionId
+    };
+
+    const alert = await Alert.create(alertData);
 
     const populatedAlert = await Alert.findById(alert._id).populate('detectedBy', 'name');
     const normalizedAlert = normalizeAlert(populatedAlert);
@@ -73,11 +97,30 @@ exports.createAlert = async (req, res) => {
       io.to(req.guard._id.toString()).emit('new-elephant-alert', normalizedAlert);
     }
 
-    // Trigger notifications in background
-    triggerAlertNotifications(populatedAlert, io);
+    // Trigger notifications in background and wait for initial summary
+    const notificationResult = await triggerAlertNotifications(populatedAlert, io);
 
-    res.status(201).json(normalizedAlert);
+    res.status(201).json({
+      success: true,
+      alert: normalizedAlert,
+      summary: {
+        insideGuardArea: normalizedAlert.insidePatrolArea,
+        status: notificationResult.status,
+        count: notificationResult.count
+      }
+    });
   } catch (error) {
+    // Handle MongoDB duplicate key error (code 11000) for detectionSessionId
+    if (error.code === 11000 && error.keyPattern && error.keyPattern.detectionSessionId) {
+      console.log(`Concurrent duplicate detectionSessionId handled: ${detectionSessionId}`);
+      const existingAlert = await Alert.findOne({ detectionSessionId });
+      return res.status(200).json({
+        ...normalizeAlert(existingAlert),
+        duplicate: true,
+        message: 'Detection event already processed (concurrent)'
+      });
+    }
+    
     console.error('Create alert error:', error);
     res.status(400).json({ message: error.message });
   }

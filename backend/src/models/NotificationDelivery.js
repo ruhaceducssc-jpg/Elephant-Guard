@@ -45,6 +45,25 @@ const notificationDeliverySchema = new mongoose.Schema({
     type: Number, // in meters
     required: true,
   },
+  residentRadiusMeters: {
+    type: Number,
+  },
+  insideGuardArea: {
+    type: Boolean,
+    default: false,
+  },
+  insideResidentGeofence: {
+    type: Boolean,
+    default: false,
+  },
+  eligible: {
+    type: Boolean,
+    default: false,
+  },
+  reason: {
+    type: String,
+    default: '',
+  },
 }, {
   timestamps: true,
 });

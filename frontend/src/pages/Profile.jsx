@@ -3,11 +3,8 @@ import {
   User, Shield, MapPin, Save, Lock, Send, 
   Eye, EyeOff, ShieldAlert, ChevronRight,
   Camera, AlertTriangle, RefreshCw, Key, Map as MapIcon,
-  Zap
+  Zap, X, CheckCircle
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
@@ -16,13 +13,10 @@ import PatrolAreaSelector from '../components/map/PatrolAreaSelector';
 
 const Profile = () => {
   const { user, updateProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState('settings');
   const [isLoading, setIsLoading] = useState(false);
   const [isSecurityLoading, setIsSecurityLoading] = useState(false);
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   const [fullProfile, setFullProfile] = useState(null);
   const [formData, setFormData] = useState({
@@ -31,20 +25,15 @@ const Profile = () => {
     phone: '',
     assignedArea: '',
     telegramChatId: '',
-    language: 'English',
-    timezone: 'Asia/Colombo',
-    avatar: '',
     patrolArea: null
   });
 
-  const [securityData, setSecurityData] = useState({
+  const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: '',
-    recoveryKey: ''
+    confirmPassword: ''
   });
 
-  // Safety date formatter
   const safeFormat = (date, formatStr) => {
     if (!date) return 'N/A';
     const d = new Date(date);
@@ -61,9 +50,6 @@ const Profile = () => {
         phone: data.phone || '',
         assignedArea: data.assignedArea || '',
         telegramChatId: data.telegramChatId || '',
-        language: data.language || 'English',
-        timezone: data.timezone || 'Asia/Colombo',
-        avatar: data.avatar || '',
         patrolArea: data.patrolArea || null
       });
     } catch (error) {
@@ -76,42 +62,23 @@ const Profile = () => {
   }, []);
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    const val = type === 'checkbox' ? checked : value;
-    
-    if (name.includes('.')) {
-      const [parent, child] = name.split('.');
-      setFormData(prev => ({
-        ...prev,
-        [parent]: {
-          ...prev[parent],
-          [child]: val
-        }
-      }));
-    } else {
-      setFormData(prev => ({ 
-        ...prev, 
-        [name]: val 
-      }));
-    }
-  };
-
-  const handleSecurityChange = (e) => {
-    setSecurityData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleAreaSave = (polygon) => {
-    setFormData(prev => ({ ...prev, patrolArea: polygon }));
-    toast.success('Patrol boundary defined. Click Save to synchronize.');
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setIsLoading(true);
     try {
-      const data = await updateProfile(formData);
+      let data;
+      if (activeTab === 'patrol') {
+        const response = await api.put('/guards/me/patrol-area', { patrolArea: formData.patrolArea });
+        data = { ...fullProfile, patrolArea: response.data.patrolArea };
+        toast.success('Patrol boundary synchronized successfully');
+      } else {
+        data = await updateProfile(formData);
+        toast.success('Profile updated successfully');
+      }
       setFullProfile(data);
-      toast.success('Profile updated successfully');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Update failed');
     } finally {
@@ -119,34 +86,23 @@ const Profile = () => {
     }
   };
 
-  const handleSecuritySubmit = async (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    if (!securityData.currentPassword) {
-      return toast.error('Current password is required to update security');
-    }
-    
-    if (securityData.newPassword && securityData.newPassword !== securityData.confirmPassword) {
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
       return toast.error('New passwords do not match');
     }
-
-    if (securityData.newPassword && securityData.newPassword.length < 6) {
-      return toast.error('New password must be at least 6 characters');
-    }
-
-    if (securityData.recoveryKey && securityData.recoveryKey.length < 6) {
-      return toast.error('Recovery key must be at least 6 characters');
-    }
-
-    setIsSecurityLoading(true);
+    setIsLoading(true);
     try {
-      await api.put('/guards/security', securityData);
-      toast.success('Security settings updated successfully');
-      setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '', recoveryKey: '' });
-      fetchFullProfile();
+      await api.put('/guards/security', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      });
+      toast.success('Security password updated');
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Security update failed');
+      toast.error(error.response?.data?.message || 'Password update failed');
     } finally {
-      setIsSecurityLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -154,352 +110,255 @@ const Profile = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('avatar', file);
+    const uploadData = new FormData();
+    uploadData.append('avatar', file);
+    setIsUploading(true);
 
-    toast.promise(
-      api.post('/guards/avatar', formData, {
+    try {
+      const { data } = await api.post('/guards/avatar', uploadData, {
         headers: { 'Content-Type': 'multipart/form-data' }
-      }),
-      {
-        loading: 'Uploading photo...',
-        success: (res) => {
-          setFullProfile(prev => ({ ...prev, avatar: res.data.avatar }));
-          updateProfile({ ...fullProfile, avatar: res.data.avatar });
-          return 'Profile photo updated';
-        },
-        error: 'Upload failed'
-      }
-    );
+      });
+      setFullProfile(prev => ({ ...prev, avatar: data.avatar }));
+      updateProfile({ ...fullProfile, avatar: data.avatar });
+      toast.success('Profile avatar updated');
+    } catch (error) {
+      toast.error('Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   if (!fullProfile) {
     return (
       <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin"></div>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Profile...</p>
+        <p className="text-[11px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em]">Synchronizing Secure Profile...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-10 pb-20 page-fade-in">
+    <div className="space-y-[22px] pb-20 page-fade-in max-w-[1920px] mx-auto">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-1">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Officer <span className="text-primary-600">Profile</span>
-          </h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Manage your account settings and preferences</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="px-3.5 py-1.5 bg-success-50 text-success-700 rounded-full text-[10px] font-bold uppercase tracking-widest border border-success-100 flex items-center gap-2">
-            <div className="w-1.5 h-1.5 bg-success-600 rounded-full animate-pulse"></div>
-            Authenticated
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Left Column: Officer Card & Navigation */}
-        <div className="lg:col-span-4 space-y-8">
-          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-soft overflow-hidden group">
-            <div className="h-28 bg-slate-50 relative overflow-hidden">
-               <ShieldAlert className="absolute -right-6 -bottom-6 text-slate-200/50" size={160} />
-               <div className="absolute inset-0 bg-primary-600/[0.03]"></div>
-            </div>
-            <div className="px-8 pb-10 -mt-12 relative z-10 text-center">
-              <div className="relative inline-block mb-4">
-                 <div className="w-24 h-24 bg-white rounded-3xl p-1 shadow-premium overflow-hidden border border-slate-100">
-                    {fullProfile.avatar ? (
-                      <img 
-                        src={fullProfile.avatar.startsWith('http') ? fullProfile.avatar : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${fullProfile.avatar}`} 
-                        alt="Profile" 
-                        className="w-full h-full object-cover rounded-2xl"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-primary-600 text-white rounded-2xl flex items-center justify-center font-bold text-3xl uppercase tracking-tighter">
-                        {fullProfile.name?.charAt(0)}
-                      </div>
-                    )}
-                 </div>
-                 <label className="absolute bottom-0 right-0 w-8 h-8 bg-slate-900 text-white rounded-xl flex items-center justify-center hover:bg-primary-600 transition-all cursor-pointer shadow-lg border-2 border-white active:scale-90">
-                    <Camera size={14} />
+        <div className="flex items-center gap-6">
+           <div className="relative group">
+              <div className="w-24 h-24 rounded-[5px] bg-[#f1f5f9] overflow-hidden border-2 border-white shadow-xl relative group-hover:border-[#1768d1] transition-all">
+                 {fullProfile?.avatar ? (
+                    <img src={`${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${fullProfile.avatar}`} alt="Avatar" className="w-full h-full object-cover" />
+                 ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-[#eaf2ff] text-[#1768d1] text-3xl font-[800]">
+                       {fullProfile?.name?.charAt(0)}
+                    </div>
+                 )}
+                 <label className="absolute inset-0 bg-[#0f172a]/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    <Camera size={24} className="text-white" />
                     <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} />
                  </label>
               </div>
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">{fullProfile.name}</h2>
-              <p className="text-[10px] text-primary-600 font-bold uppercase tracking-widest mt-2">{fullProfile.role}</p>
-              
-              <div className="mt-8 space-y-2">
-                 {[
-                   { icon: <Shield />, label: 'Officer ID', value: (fullProfile._id || '').slice(-8).toUpperCase() },
-                   { icon: <MapPin />, label: 'Active Sector', value: fullProfile.assignedArea },
-                   { icon: <Send />, label: 'Telegram', value: fullProfile.telegramChatId ? 'Connected' : 'Not Linked', color: fullProfile.telegramChatId ? 'text-success-600' : 'text-slate-400' },
-                 ].map((item, i) => (
-                   <div key={i} className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-100/50">
-                      <div className="flex items-center gap-3">
-                         <div className="text-slate-400">{React.cloneElement(item.icon, { size: 14 })}</div>
-                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{item.label}</span>
-                      </div>
-                      <span className={`text-[10px] font-bold ${item.color || 'text-slate-700'} uppercase tracking-tight`}>{item.value}</span>
-                   </div>
-                 ))}
+           </div>
+           <div className="space-y-1">
+              <h1 className="text-[28px] font-[800] text-[#0f172a] tracking-tight leading-none">
+                 {fullProfile?.name}
+              </h1>
+              <div className="flex items-center gap-3">
+                 <p className="text-[#64748b] text-[12px] font-[700] uppercase tracking-widest">Wildlife Enforcement Officer</p>
+                 <span className="w-1 h-1 bg-[#cbd5e1] rounded-full"></span>
+                 <p className="text-[#1768d1] text-[11px] font-[800] uppercase tracking-widest">{fullProfile?.assignedArea}</p>
               </div>
-            </div>
-          </div>
+           </div>
+        </div>
+        <div className="badge badge-success px-5 py-2.5 bg-[#edfcf4] text-[#0e7a42] border-[#b7efcf] rounded-[5px] font-[800] text-[11px] tracking-widest flex items-center gap-2">
+            <div className="w-2 h-2 bg-[#18b866] rounded-full animate-pulse"></div>
+            AUTHENTICATED SESSION
+        </div>
+      </div>
 
-          {/* Tab Navigation */}
-          <div className="bg-white p-3 rounded-[2rem] border border-slate-200 shadow-soft space-y-1">
-            {[
-              { id: 'general', label: 'Account Settings', icon: <User /> },
-              { id: 'security', label: 'Security & Access', icon: <Lock /> },
-              { id: 'patrol', label: 'Patrol Boundary', icon: <MapIcon /> },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-all duration-300 ${
-                  activeTab === tab.id 
-                    ? 'bg-primary-50 text-primary-700 font-bold' 
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`${activeTab === tab.id ? 'text-primary-600' : 'text-slate-400'}`}>
-                    {React.cloneElement(tab.icon, { size: 18 })}
-                  </div>
-                  <span className="text-[11px] font-bold uppercase tracking-widest">{tab.label}</span>
-                </div>
-                <ChevronRight size={14} className={activeTab === tab.id ? 'opacity-100' : 'opacity-20'} />
-              </button>
-            ))}
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-[14px]">
+        {/* Sidebar / Tabs */}
+        <div className="lg:col-span-3 space-y-[14px]">
+           <div className="card p-2 flex flex-col gap-1 border-[#dfe7f1] bg-white">
+              {[
+                { id: 'settings', label: 'Account Settings', icon: <User size={18} /> },
+                { id: 'security', label: 'Security & Access', icon: <Lock size={18} /> },
+                { id: 'patrol', label: 'Patrol Boundary', icon: <MapIcon size={18} /> },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-[5px] font-[700] text-[13.5px] transition-all border ${
+                    activeTab === tab.id 
+                      ? 'bg-[#1768d1] text-white border-[#1768d1] shadow-lg shadow-[#1768d1]/10' 
+                      : 'text-[#64748b] border-transparent hover:bg-[#f8fafc] hover:text-[#0f172a]'
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+           </div>
+
+           <div className="card p-6 bg-[#0f172a] text-white relative overflow-hidden group border-none">
+              <div className="relative z-10 space-y-6">
+                 <h3 className="font-[800] text-[10px] uppercase tracking-[0.2em] text-[#94a3b8]">Operational Status</h3>
+                 <div className="flex items-center gap-5">
+                    <div className="w-12 h-12 rounded-[5px] bg-white/10 flex items-center justify-center border border-white/10 shadow-lg">
+                       <Shield size={24} className="text-[#2878e8]" />
+                    </div>
+                    <div className="space-y-1">
+                       <p className="text-[13px] font-[800] tracking-tight uppercase">Identity Verified</p>
+                       <p className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest leading-none">Security Tier 01</p>
+                    </div>
+                 </div>
+                 <div className="pt-2 border-t border-white/10 mt-6 flex justify-between items-center">
+                    <span className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Network Link</span>
+                    <span className="text-[10px] font-[800] text-[#18b866] uppercase tracking-widest">STABLE</span>
+                 </div>
+              </div>
+              <ShieldAlert className="absolute -right-6 -bottom-6 text-white/5 transition-transform duration-1000 group-hover:scale-110" size={120} />
+           </div>
         </div>
 
-        {/* Right Column: Tab Content */}
-        <div className="lg:col-span-8">
-           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-soft min-h-[700px] flex flex-col overflow-hidden">
-                <div className="p-10 space-y-10 flex-1">
-                  {/* General Info Tab */}
-                  {activeTab === 'general' && (
-                    <form onSubmit={handleSubmit} className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div>
-                        <div className="flex items-center gap-4 mb-8 px-1">
-                           <div className="w-10 h-10 bg-primary-50 text-primary-600 rounded-xl flex items-center justify-center border border-primary-100">
-                              <User size={20} />
-                           </div>
-                           <div>
-                              <h3 className="text-lg font-bold text-slate-900 tracking-tight">Account Information</h3>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Update your personal details and contact info</p>
-                           </div>
-                        </div>
+        {/* Content Area */}
+        <div className="lg:col-span-9">
+           <div className="card h-full min-h-[600px] flex flex-col border-[#dfe7f1] bg-white">
+              <div className="px-8 py-[22px] border-b border-[#dfe7f1] bg-[#f8fafc] flex items-center justify-between shrink-0">
+                 <h2 className="text-[14px] font-[800] text-[#0f172a] uppercase tracking-widest flex items-center gap-3">
+                    {activeTab === 'settings' && <><User className="text-[#1768d1]" size={20} /> Account Settings</>}
+                    {activeTab === 'security' && <><Lock className="text-[#f59e0b]" size={20} /> Security & Access</>}
+                    {activeTab === 'patrol' && <><MapIcon className="text-[#119c55]" size={20} /> Patrol Boundary</>}
+                 </h2>
+                 <span className="text-[10px] font-[800] text-[#cbd5e1] uppercase tracking-[0.2em]">Lanka Beacon Terminal</span>
+              </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                           <div className="space-y-1.5">
-                             <label className="label ml-1">Full Name</label>
-                             <input type="text" name="name" value={formData.name} onChange={handleChange} className="input" />
-                           </div>
-                           <div className="space-y-1.5">
-                             <label className="label ml-1">Email Address</label>
-                             <input type="email" name="email" value={formData.email} onChange={handleChange} className="input" />
-                           </div>
-                           <div className="space-y-1.5">
-                             <label className="label ml-1">Phone Number</label>
-                             <input type="text" name="phone" value={formData.phone} onChange={handleChange} placeholder="+94 XX XXX XXXX" className="input" />
-                           </div>
-                           <div className="space-y-1.5">
-                             <label className="label ml-1">Assigned Sector</label>
-                             <input type="text" name="assignedArea" value={formData.assignedArea} onChange={handleChange} className="input" />
-                           </div>
-                           <div className="space-y-1.5 md:col-span-2">
-                             <label className="label ml-1">Telegram Chat ID</label>
-                             <div className="relative">
-                               <Send className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                               <input type="text" name="telegramChatId" value={formData.telegramChatId} onChange={handleChange} className="input pl-11" />
-                             </div>
-                           </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-8 border-t border-slate-100">
-                         <div className="space-y-1.5">
-                            <label className="label ml-1">System Language</label>
-                            <select name="language" value={formData.language} onChange={handleChange} className="input appearance-none bg-slate-50/50">
-                               <option>English</option>
-                               <option>Sinhala</option>
-                               <option>Tamil</option>
-                            </select>
-                         </div>
-                         <div className="space-y-1.5">
-                            <label className="label ml-1">Time Zone</label>
-                            <select name="timezone" value={formData.timezone} onChange={handleChange} className="input appearance-none bg-slate-50/50">
-                               <option value="Asia/Colombo">Asia/Colombo (GMT+5:30)</option>
-                               <option value="UTC">UTC (GMT+0:00)</option>
-                            </select>
-                         </div>
-                      </div>
-
-                      <div className="pt-6 flex justify-end">
-                        <button type="submit" disabled={isLoading} className="btn btn-primary px-8 py-3 text-xs uppercase tracking-widest font-bold">
-                          {isLoading ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
-                          Save Changes
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {/* Patrol Area Tab */}
-                  {activeTab === 'patrol' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                       <div className="flex items-center gap-4 mb-2 px-1">
-                          <div className="w-10 h-10 bg-success-50 text-success-600 rounded-xl flex items-center justify-center border border-success-100">
-                             <MapIcon size={20} />
+              <div className="p-10 flex-1">
+                 {activeTab === 'settings' && (
+                    <form onSubmit={handleSubmit} className="max-w-3xl space-y-10 animate-in fade-in duration-500">
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          <div className="space-y-2">
+                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">Full Legal Name</label>
+                             <input type="text" name="name" className="h-12 px-4 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all" value={formData.name} onChange={handleChange} required />
                           </div>
-                          <div>
-                             <h3 className="text-lg font-bold text-slate-900 tracking-tight">Patrol Boundary</h3>
-                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Define your assigned geographic responsibility zone</p>
+                          <div className="space-y-2">
+                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">Secure Email Interlink</label>
+                             <input type="email" name="email" className="h-12 px-4 w-full bg-[#f8fafc] border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] text-[#94a3b8] cursor-not-allowed" value={formData.email} disabled />
+                          </div>
+                          <div className="space-y-2">
+                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">Assigned Tactical Sector</label>
+                             <input type="text" name="assignedArea" className="h-12 px-4 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all" value={formData.assignedArea} onChange={handleChange} required />
+                          </div>
+                          <div className="space-y-2">
+                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">Telegram Signal ID</label>
+                             <input type="text" name="telegramChatId" className="h-12 px-4 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all" value={formData.telegramChatId} onChange={handleChange} placeholder="Optional Chat ID" />
                           </div>
                        </div>
-                       
-                       <PatrolAreaSelector 
-                         initialPolygon={formData.patrolArea} 
-                         onSave={handleAreaSave} 
-                       />
 
-                       <div className="pt-6 flex justify-end">
-                        <button type="button" onClick={handleSubmit} disabled={isLoading || !formData.patrolArea} className="btn btn-primary px-8 py-3 text-xs uppercase tracking-widest font-bold">
-                          {isLoading ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
-                          Save Patrol Boundary
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                       <div className="pt-8 border-t border-[#edf1f6]">
+                          <button type="submit" disabled={isLoading} className="h-12 px-10 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[#1768d1]/10 hover:bg-[#0f56b3] transition-all flex items-center gap-3">
+                             {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
+                             Update Account Matrix
+                          </button>
+                       </div>
+                    </form>
+                 )}
 
-                  {/* Security Tab */}
-                  {activeTab === 'security' && (
-                    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div>
-                        <div className="flex items-center gap-4 mb-8 px-1">
-                           <div className="w-10 h-10 bg-danger-50 text-danger-600 rounded-xl flex items-center justify-center border border-danger-100">
-                              <Lock size={20} />
-                           </div>
-                           <div>
-                              <h3 className="text-lg font-bold text-slate-900 tracking-tight">Security Protocol</h3>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Update your password and recovery keys</p>
-                           </div>
-                        </div>
-                        
-                        <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-4 mb-8">
-                           <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
-                           <div className="space-y-1">
-                             <p className="text-xs text-amber-800 font-bold uppercase tracking-tight">
-                                Security Status
-                             </p>
-                             <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
-                                Regular password rotation is recommended. Last change: {safeFormat(fullProfile.lastPasswordChange || fullProfile.createdAt, 'PPPP')}
-                             </p>
-                           </div>
-                        </div>
+                 {activeTab === 'security' && (
+                    <form onSubmit={handlePasswordSubmit} className="max-w-3xl space-y-10 animate-in fade-in duration-500">
+                       <div className="p-6 bg-[#fff9e8] rounded-[5px] border border-[#f8d68a] flex items-start gap-5">
+                          <div className="w-10 h-10 bg-white/60 rounded-[5px] flex items-center justify-center text-[#b76300] border border-white">
+                             <ShieldAlert size={22} />
+                          </div>
+                          <div className="space-y-1">
+                             <p className="text-[13px] font-[800] text-[#b76300] uppercase tracking-tight leading-none">Security Protocol Alpha</p>
+                             <p className="text-[11.5px] text-[#b76300]/80 font-[600] leading-relaxed uppercase tracking-wide mt-2">Modifying your access credentials will invalidate all other active sessions across the network mesh.</p>
+                          </div>
+                       </div>
 
-                        <form onSubmit={handleSecuritySubmit} className="space-y-8">
-                           <div className="space-y-1.5">
-                             <label className="label ml-1">Current Password</label>
-                             <div className="relative">
-                               <input 
-                                 type={showCurrentPassword ? 'text' : 'password'} 
-                                 name="currentPassword"
-                                 required
-                                 value={securityData.currentPassword} 
-                                 onChange={handleSecurityChange} 
-                                 className="input" 
-                                 placeholder="Verify identity to update security"
-                               />
-                               <button type="button" onClick={() => setShowCurrentPassword(!showCurrentPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600 transition-colors">
-                                 {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                               </button>
+                       <div className="space-y-8">
+                          <div className="space-y-2">
+                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">Current Password</label>
+                             <input type="password" name="currentPassword" value={passwordData.currentPassword} onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })} className="h-12 px-4 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all" required />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                             <div className="space-y-2">
+                                <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">New Access Key</label>
+                                <input type="password" name="newPassword" value={passwordData.newPassword} onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })} className="h-12 px-4 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all" required />
                              </div>
-                           </div>
+                             <div className="space-y-2">
+                                <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest ml-1">Confirm Access Key</label>
+                                <input type="password" name="confirmPassword" value={passwordData.confirmPassword} onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })} className="h-12 px-4 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all" required />
+                             </div>
+                          </div>
+                       </div>
 
-                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="space-y-1.5">
-                                <label className="label ml-1">New Password (Optional)</label>
-                                <div className="relative">
-                                  <input 
-                                    type={showNewPassword ? 'text' : 'password'} 
-                                    name="newPassword"
-                                    value={securityData.newPassword} 
-                                    onChange={handleSecurityChange} 
-                                    className="input" 
-                                    placeholder="••••••••"
-                                  />
-                                  <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
-                                    {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                                  </button>
+                       <div className="pt-6 border-t border-[#edf1f6]">
+                          <h3 className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em] mb-5">Emergency Recovery Access</h3>
+                          <div className="flex items-center justify-between p-5 bg-[#f8fafc] rounded-[5px] border border-[#dfe7f1] group transition-all">
+                             <div className="flex items-center gap-5">
+                                <div className="w-11 h-11 bg-white rounded-[5px] flex items-center justify-center text-[#1768d1] shadow-sm border border-[#dfe7f1] group-hover:bg-[#1768d1] group-hover:text-white transition-all">
+                                   <Key size={20} />
                                 </div>
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className="label ml-1">Confirm New Password</label>
-                                <div className="relative">
-                                  <input 
-                                    type={showConfirmPassword ? 'text' : 'password'} 
-                                    name="confirmPassword"
-                                    value={securityData.confirmPassword} 
-                                    onChange={handleSecurityChange} 
-                                    className="input" 
-                                    placeholder="••••••••"
-                                  />
-                                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
-                                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                                  </button>
+                                <div className="space-y-1.5">
+                                   <p className="text-[12px] font-[800] text-[#0f172a] uppercase tracking-widest leading-none">Global Recovery Signal Key</p>
+                                   <p className="text-[11px] font-mono font-[700] text-[#64748b] tracking-[0.2em] leading-none uppercase">{fullProfile?.recoveryKey || 'ENCRYPTED'}</p>
                                 </div>
-                              </div>
-                           </div>
-
-                           <div className="space-y-1.5">
-                             <div className="flex justify-between items-center ml-1">
-                               <label className="label">Recovery Key (Optional)</label>
-                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Last updated: {safeFormat(fullProfile.securityKeyUpdatedAt, 'PP')}</span>
                              </div>
-                             <div className="relative">
-                               <input 
-                                 type={showRecoveryKey ? 'text' : 'password'} 
-                                 name="recoveryKey"
-                                 value={securityData.recoveryKey} 
-                                 onChange={handleSecurityChange} 
-                                 className="input" 
-                                 placeholder="Enter secret recovery phrase"
-                               />
-                               <button type="button" onClick={() => setShowRecoveryKey(!showRecoveryKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary-600">
-                                 {showRecoveryKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                               </button>
-                             </div>
-                             <p className="text-[9px] text-slate-400 font-medium ml-1">Use this recovery key if you forget your password. Keep it private.</p>
-                           </div>
+                             <div className="h-7 px-3 bg-[#eaf2ff] text-[#1768d1] border border-[#1768d1]/20 rounded-[5px] flex items-center justify-center text-[9px] font-[800] uppercase tracking-widest">Active Signal</div>
+                          </div>
+                       </div>
 
-                           <div className="pt-2">
-                             <button type="submit" disabled={isSecurityLoading} className="btn btn-primary px-8 py-3 text-xs uppercase tracking-widest font-bold shadow-lg shadow-primary-200">
-                                {isSecurityLoading ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />}
-                                Update Security
-                             </button>
-                           </div>
-                        </form>
-                      </div>
+                       <div className="pt-4">
+                          <button type="submit" disabled={isLoading} className="h-12 px-10 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[#1768d1]/10 hover:bg-[#0f56b3] transition-all flex items-center gap-3">
+                             {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Zap size={18} />}
+                             Update Security Matrix
+                          </button>
+                       </div>
+                    </form>
+                 )}
+
+                 {activeTab === 'patrol' && (
+                    <div className="space-y-10 animate-in fade-in duration-500 h-full flex flex-col">
+                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-[#edf1f6] pb-8">
+                          <div>
+                             <h3 className="text-[18px] font-[800] text-[#0f172a] uppercase tracking-widest">Tactical Vector Boundaries</h3>
+                             <p className="text-[#64748b] text-[12px] font-[600] mt-2 uppercase tracking-wider leading-relaxed">Establish the spatial perimeter for automated biological signature relay and command response</p>
+                          </div>
+                          <div className="h-10 px-4 bg-[#0f172a] text-white rounded-[5px] text-[10px] font-[800] uppercase tracking-[0.2em] border border-white/10 shadow-lg flex items-center justify-center">
+                             System Matrix v4.22-S
+                          </div>
+                       </div>
+
+                       <div className="flex-1 min-h-[500px] relative">
+                          <div className="absolute inset-0 rounded-[5px] border border-[#dfe7f1] overflow-hidden shadow-2xl bg-[#f1f5f9] group">
+                             <PatrolAreaSelector 
+                               initialPolygon={fullProfile?.patrolArea} 
+                               onSave={(newPolygon) => {
+                                 setFormData({ ...formData, patrolArea: newPolygon });
+                                 // Auto sync when area is saved from selector
+                                 const syncBoundary = async () => {
+                                   setIsLoading(true);
+                                   try {
+                                     const response = await api.put('/guards/me/patrol-area', { patrolArea: newPolygon });
+                                     setFullProfile({ ...fullProfile, patrolArea: response.data.patrolArea });
+                                     toast.success('Vector boundary synchronized with network');
+                                   } catch (error) {
+                                     toast.error('Boundary synchronization failed');
+                                   } finally {
+                                      setIsLoading(false);
+                                   }
+                                 };
+                                 syncBoundary();
+                               }} 
+                             />
+                             <div className="absolute top-6 left-6 z-[500] px-4 py-2 bg-[#0f172a]/95 backdrop-blur-sm text-white rounded-[5px] text-[10px] font-[800] uppercase tracking-widest border border-white/10 shadow-2xl flex items-center gap-3">
+                                <div className="w-2 h-2 bg-[#18b866] rounded-full animate-pulse shadow-[0_0_8px_rgba(24,184,102,0.8)]"></div>
+                                Tactical Matrix Active
+                             </div>
+                          </div>
+                       </div>
                     </div>
-                  )}
-
-                </div>
-
-                <div className="p-8 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
-                   <div className="flex items-center gap-2">
-                      <Shield size={14} className="text-primary-600" />
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">End-to-End Encrypted Terminal</span>
-                   </div>
-                   <button type="button" onClick={() => fetchFullProfile()} className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors">
-                      Reset View
-                   </button>
-                </div>
+                 )}
+              </div>
            </div>
         </div>
       </div>

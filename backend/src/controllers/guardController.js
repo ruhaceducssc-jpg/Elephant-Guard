@@ -153,6 +153,62 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
+// @desc    Update guard patrol area
+// @route   PUT /api/guards/me/patrol-area
+// @access  Private
+exports.updatePatrolArea = async (req, res) => {
+  const { patrolArea } = req.body;
+
+  if (!patrolArea || patrolArea.type !== 'Polygon' || !patrolArea.coordinates || !patrolArea.coordinates[0]) {
+    return res.status(400).json({ message: 'Please provide a valid GeoJSON Polygon' });
+  }
+
+  const coords = patrolArea.coordinates[0];
+
+  // Validation
+  if (coords.length < 4) {
+    return res.status(400).json({ message: 'A polygon must have at least 3 unique points (4 total including closed loop)' });
+  }
+
+  // Ensure closed loop
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    return res.status(400).json({ message: 'Polygon ring must be closed (first and last points must be identical)' });
+  }
+
+  // Validate coordinate ranges
+  for (const [lng, lat] of coords) {
+    if (isNaN(lng) || isNaN(lat) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ message: `Invalid coordinates detected: [${lng}, ${lat}]` });
+    }
+  }
+
+  try {
+    const guard = await Guard.findById(req.guard._id);
+
+    if (!guard) {
+      return res.status(404).json({ message: 'Guard not found' });
+    }
+
+    guard.patrolArea = patrolArea;
+    guard.patrolAreaUpdatedAt = new Date();
+    guard.patrolAreaPointCount = coords.length;
+
+    await guard.save();
+
+    res.json({
+      success: true,
+      message: 'Patrol area updated successfully',
+      patrolArea: guard.patrolArea,
+      pointCount: guard.patrolAreaPointCount,
+      updatedAt: guard.patrolAreaUpdatedAt
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Upload profile picture
 // @route   POST /api/guards/avatar
 // @access  Private

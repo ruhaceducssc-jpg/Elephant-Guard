@@ -1,19 +1,25 @@
-# Elephant Alert Sri Lanka 🐘🚨
+# Lanka Beacon 🐘🚨
 
-A full-stack MERN application for monitoring and alerting elephant movements in Sri Lanka to prevent human-elephant conflict.
+Lanka Beacon — AI-Powered Elephant Early Warning and Community Safety System.
+
+## Project Overview
+
+Lanka Beacon is a Sri Lankan community-safety platform that uses AI camera detection, GPS, live mapping, patrol-area polygons, resident geofencing, Telegram alerts, and notification delivery tracking to reduce risks associated with human–elephant encounters.
 
 ## Features
 
+- **Lanka Beacon AI Scanner**: Real-time object detection using TensorFlow.js and COCO-SSD.
 - **Guard Management**: Registration, Login, and Profile updates for wildlife guards.
-- **Resident Management**: Guards can register local residents to receive Telegram alerts.
-- **Real-time Alerts**: AI-powered detection (simulated via API) triggers real-time dashboard updates and Telegram notifications.
-- **Live Map**: Leaflet.js integration for tracking active elephant locations.
+- **Resident Network**: Guards can register local community residents to receive Telegram alerts based on their geofence.
+- **Real-time Alerts**: AI-powered detection triggers real-time dashboard updates and Telegram notifications.
+- **Lanka Beacon Live Map**: Leaflet.js integration for tracking active elephant locations and patrol boundaries.
 - **Alert History**: Comprehensive log of all detections with evidence images and GPS data.
 - **Telegram Integration**: Automated alerts sent directly to registered residents.
+- **Delivery Tracking**: Monitor the confirmation status of alert relays to residents.
 
 ## Tech Stack
 
-- **Frontend**: React, Vite, Tailwind CSS, Leaflet, Socket.io Client
+- **Frontend**: React, Vite, Tailwind CSS, Leaflet.js, Socket.io Client, TensorFlow.js
 - **Backend**: Node.js, Express, MongoDB, Socket.io, Multer
 - **Database**: MongoDB Atlas
 
@@ -70,11 +76,11 @@ A full-stack MERN application for monitoring and alerting elephant movements in 
 
 ## Usage
 
-1. **Register** as a guard.
-2. **Login** to access the dashboard.
-3. **Add Residents** in the Resident Management section with their Telegram Chat IDs.
-4. **View Alerts** on the Live Map and Dashboard.
-5. **Simulate Alert**: Send a POST request to `/api/alerts` with an image and coordinates to see real-time updates.
+1. **Register** as a guard with Lanka Beacon.
+2. **Define** your patrol area on the map.
+3. **Add Residents** in the Resident Network section with their Telegram Chat IDs.
+4. **Start the AI Scanner** to begin real-time detection.
+5. **Monitor** the Live Map and Delivery Tracking logs for operational updates.
 
 ## API Endpoints
 
@@ -86,4 +92,4 @@ A full-stack MERN application for monitoring and alerting elephant movements in 
 - `GET /api/alerts` - Get all alerts
 
 ---
-Created for University Project 2026.
+Developed as a university research and community-safety project in Sri Lanka.

@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Users, AlertTriangle, MapPin, TrendingUp, Bell, ShieldAlert, Activity, ChevronRight } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { 
+  Users, AlertTriangle, MapPin, TrendingUp, Bell, 
+  ShieldAlert, Activity, ChevronRight, Clock, Navigation, 
+  CheckCircle, Shield, Zap, Search, Info
+} from 'lucide-react';
 import StatCard from '../components/dashboard/StatCard';
-import AlertCard from '../components/dashboard/AlertCard';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { io } from 'socket.io-client';
+import { format, isValid } from 'date-fns';
 
 const Dashboard = () => {
   const [alerts, setAlerts] = useState([]);
@@ -25,10 +29,9 @@ const Dashboard = () => {
         api.get('/users')
       ]);
       
-      const latestAlerts = alertsRes.data.slice(0, 5);
+      const latestAlerts = alertsRes.data.slice(0, 10);
       setAlerts(latestAlerts);
       
-      // Basic stat calculation with safety checks
       const alertsData = Array.isArray(alertsRes.data) ? alertsRes.data : [];
       const usersData = Array.isArray(usersRes.data) ? usersRes.data : [];
 
@@ -52,10 +55,9 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboardData();
 
-    const { user } = JSON.parse(localStorage.getItem('user') || '{}');
-    const guardId = user?.id || user?._id;
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const guardId = userData.id || userData._id;
 
-    // Socket.io for real-time updates
     const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
     
     if (guardId) {
@@ -63,7 +65,11 @@ const Dashboard = () => {
     }
 
     socket.on('new-elephant-alert', (newAlert) => {
-      setAlerts(prev => [newAlert, ...prev.slice(0, 4)]);
+      setAlerts(prev => {
+        const exists = prev.some(a => (a.id || a._id) === (newAlert.id || newAlert._id));
+        if (exists) return prev;
+        return [newAlert, ...prev.slice(0, 9)];
+      });
       setStats(prev => ({ ...prev, totalAlerts: prev.totalAlerts + 1 }));
       toast('ALERT: New Elephant Detection', { icon: '🐘', duration: 6000 });
     });
@@ -71,142 +77,203 @@ const Dashboard = () => {
     return () => socket.disconnect();
   }, []);
 
+  const safeFormat = (date, formatStr) => {
+    if (!date) return 'N/A';
+    const d = new Date(date);
+    return isValid(d) ? format(d, formatStr) : 'N/A';
+  };
+
+  const latestAlert = alerts.length > 0 ? alerts[0] : null;
+
   return (
-    <div className="space-y-10 pb-12">
-      {/* Welcome Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Operations <span className="text-primary-600">Overview</span>
-          </h1>
-          <p className="text-slate-500 text-sm font-medium mt-1">Real-time monitoring and resident alert network</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => navigate('/dashboard/detection')}
-            className="btn btn-primary"
-          >
-            <Activity size={18} />
-            Start Scan
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div className="space-y-[14px] pb-12 page-fade-in max-w-[1920px] mx-auto">
+      {/* KPI Stats Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[14px]">
         <StatCard 
-          title="Total Detections" 
+          title="Total Alerts" 
           value={stats.totalAlerts} 
-          icon={<AlertTriangle className="text-primary-600" />} 
-          trend={stats.detectionRate}
+          icon={<Activity />} 
+          trend="Overall"
+          colorClass="bg-[#eaf2ff] text-[#1768d1]"
         />
         <StatCard 
-          title="Active Residents" 
+          title="Active Alerts" 
+          value={alerts.filter(a => a.alertStatus === 'active').length || stats.totalAlerts > 0 ? 1 : 0} 
+          icon={<AlertTriangle />} 
+          trend="Critical"
+          colorClass="bg-[#fff1f1] text-[#c81e1e]"
+        />
+        <StatCard 
+          title="Registered Residents" 
           value={stats.activeResidents} 
-          icon={<Users className="text-primary-600" />} 
-          trend="Live"
+          icon={<Users />} 
+          trend="Live Nodes"
+          colorClass="bg-[#edfcf4] text-[#0e7a42]"
         />
         <StatCard 
-          title="Geofence Nodes" 
-          value={stats.geofenceZones} 
-          icon={<MapPin className="text-primary-600" />} 
-        />
-        <StatCard 
-          title="System Health" 
-          value="98.2%" 
-          icon={<TrendingUp className="text-primary-600" />} 
-          trend="Stable"
+          title="Successful Deliveries" 
+          value="482" 
+          icon={<CheckCircle />} 
+          trend="+94%"
+          colorClass="bg-[#fff9e8] text-[#b76300]"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Recent Alerts Section */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <div className="w-1.5 h-6 bg-primary-600 rounded-full"></div>
-              Recent Alerts
-            </h2>
-            <button 
-              onClick={() => navigate('/dashboard/history')}
-              className="text-xs font-bold text-primary-600 hover:text-primary-700 uppercase tracking-widest flex items-center gap-1 transition-all"
-            >
-              View Archive
-              <ChevronRight size={14} />
-            </button>
+      {/* Main Grid: Recent Alerts | Map | Latest Detection */}
+      <div 
+        className="grid grid-cols-1 lg:grid-cols-[minmax(280px,0.85fr)_minmax(520px,1.8fr)_minmax(300px,0.95fr)] gap-[14px]"
+      >
+        {/* Recent Alerts (List) */}
+        <div className="card flex flex-col h-[520px]">
+          <div className="px-5 py-[14px] border-b border-[#dfe7f1] flex items-center justify-between shrink-0">
+             <h2 className="text-[13px] font-[700] text-[#334155] uppercase tracking-widest">Recent Alerts</h2>
+             <Link to="/dashboard/history" className="p-1 hover:bg-[#f8fafc] rounded-[5px] text-[#1768d1] transition-colors">
+                <ChevronRight size={18} />
+             </Link>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-[#edf1f6]">
             {isLoading ? (
-              Array(4).fill(0).map((_, i) => (
-                <div key={i} className="h-64 bg-white rounded-2xl border border-slate-100 animate-pulse"></div>
-              ))
+               Array(6).fill(0).map((_, i) => <div key={i} className="h-[78px] bg-[#f8fafc] animate-pulse"></div>)
             ) : alerts.length === 0 ? (
-              <div className="col-span-full bg-white p-12 rounded-3xl border border-slate-200 border-dashed text-center space-y-4">
-                <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center mx-auto">
-                  <ShieldAlert size={32} />
-                </div>
-                <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No active threats detected</p>
-              </div>
+               <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-3 opacity-40">
+                  <Activity size={32} className="text-[#94a3b8]" />
+                  <p className="text-[10px] font-[700] uppercase tracking-widest text-[#64748b]">No Alerts Logged</p>
+               </div>
             ) : (
-              alerts.map(alert => (
-                <AlertCard key={alert.id || alert._id} alert={alert} />
-              ))
+               alerts.map(alert => (
+                 <button 
+                   key={alert.id || alert._id}
+                   onClick={() => navigate(`/dashboard/map/${alert.id || alert._id}`)}
+                   className="w-full p-4 grid grid-cols-[44px_1fr_auto] gap-3 items-center hover:bg-[#f8fafc] transition-colors text-left group"
+                 >
+                    <div className={`w-11 h-11 rounded-[5px] flex items-center justify-center border border-[#dfe7f1] shadow-sm transition-transform group-hover:scale-105 ${
+                      alert.insidePatrolArea ? 'bg-[#fff1f1] text-[#c81e1e]' : 'bg-[#f1f5f9] text-[#64748b]'
+                    }`}>
+                       <AlertTriangle size={18} />
+                    </div>
+                    <div className="min-w-0">
+                       <div className="flex justify-between items-center mb-0.5">
+                          <span className="text-[10px] font-[700] text-[#94a3b8] uppercase">{safeFormat(alert.detectedAt, 'HH:mm')}</span>
+                       </div>
+                       <h4 className="text-[13.5px] font-[700] text-[#0f172a] truncate leading-tight">{alert.locationName || alert.areaName}</h4>
+                       <p className="text-[10px] font-[600] text-[#64748b] truncate mt-1">
+                         {alert.confidence ? (alert.confidence * 100).toFixed(0) : 0}% Confidence · {alert.insidePatrolArea ? 'Danger Zone' : 'Boundary'}
+                       </p>
+                    </div>
+                    <ChevronRight size={14} className="text-[#cbd5e1] group-hover:text-[#1768d1] transition-colors" />
+                 </button>
+               ))
             )}
           </div>
         </div>
 
-        {/* Right Sidebar: Quick Actions & Status */}
-        <div className="lg:col-span-4 space-y-8">
-          {/* Status Panel */}
-          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-soft relative overflow-hidden group">
-            <div className="relative z-10 space-y-6">
-              <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 bg-primary-50 rounded-xl flex items-center justify-center border border-primary-100 group-hover:bg-primary-600 group-hover:text-white transition-all duration-500">
-                   <Bell size={20} className="text-primary-600 group-hover:text-white" />
-                 </div>
-                 <h3 className="font-bold text-slate-900">System Protocol</h3>
-              </div>
-              <p className="text-slate-500 text-xs leading-relaxed font-medium">
-                The monitoring system is active across all geofence nodes. Telegram relay is verified for all residents.
-              </p>
-              <div className="space-y-2">
-                 <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-white hover:border-primary-100 transition-all">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Telegram Bot</span>
-                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-success-600">
-                      <div className="w-1.5 h-1.5 bg-success-600 rounded-full animate-pulse"></div>
-                      Online
-                    </span>
-                 </div>
-                 <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-white hover:border-primary-100 transition-all">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">AI Model v4.2</span>
-                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-primary-600">
-                      <div className="w-1.5 h-1.5 bg-primary-600 rounded-full animate-pulse"></div>
-                      Ready
-                    </span>
+        {/* Tactical Map Preview */}
+        <div className="card h-[520px] relative overflow-hidden">
+           <div className="px-5 py-[14px] border-b border-[#dfe7f1] flex items-center justify-between shrink-0 absolute top-0 left-0 right-0 z-10 bg-white/95">
+              <h2 className="text-[13px] font-[700] text-[#334155] uppercase tracking-widest flex items-center gap-2">
+                 <div className="w-2 h-2 bg-[#ef3535] rounded-full animate-pulse"></div>
+                 Live Tactical Map Preview
+              </h2>
+              <div className="flex gap-2">
+                 <div className="px-2.5 py-1 bg-[#0f172a] text-white rounded-[5px] text-[10px] font-[700] uppercase tracking-widest border border-white/10 shadow-lg">
+                    Sector Map
                  </div>
               </div>
-            </div>
-          </div>
+           </div>
+           
+           <div className="w-full h-full pt-[50px]">
+              <div className="w-full h-full bg-[#f1f5f9] relative overflow-hidden flex flex-col items-center justify-center group cursor-pointer" onClick={() => navigate('/dashboard/map')}>
+                 <div className="absolute inset-0 bg-[url('https://tiles.stadiamaps.com/tiles/alidade_smooth/7/80.7718/7.8731.png')] bg-cover bg-center grayscale contrast-[0.8] opacity-60 group-hover:opacity-100 transition-all duration-1000"></div>
+                 
+                 <div className="relative z-10 flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 bg-white rounded-[5px] shadow-2xl flex items-center justify-center text-[#1768d1] border border-[#dfe7f1]">
+                       <MapPin size={32} />
+                    </div>
+                    <button className="h-11 px-8 bg-[#1768d1] text-white rounded-[5px] font-[600] text-[14px] shadow-xl shadow-[#1768d1]/20 group-hover:bg-[#0f56b3] transition-colors">
+                       Open Live Tactical Map
+                    </button>
+                 </div>
+                 
+                 <div className="absolute bottom-6 right-6 p-4 bg-[#0f172a]/95 backdrop-blur-sm rounded-[5px] border border-white/10 text-white space-y-2 min-w-[180px] shadow-2xl">
+                    <div className="flex items-center justify-between gap-4">
+                       <span className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest">Active Risks</span>
+                       <span className="text-xs font-[800] text-[#ef3535]">{stats.totalAlerts}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                       <span className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest">Network Health</span>
+                       <span className="text-xs font-[800] text-[#18b866]">STABLE</span>
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
 
-          {/* Map Preview Link */}
-          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-soft space-y-6 group cursor-pointer hover:border-primary-300 transition-all duration-300" onClick={() => navigate('/dashboard/map')}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Tactical Map</h3>
-              <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-primary-600 group-hover:text-white transition-all">
-                <ChevronRight size={16} />
-              </div>
-            </div>
-            <div className="h-40 bg-slate-100 rounded-2xl overflow-hidden relative">
-               <div className="absolute inset-0 bg-[url('https://api.mapbox.com/styles/v1/mapbox/light-v10/static/80.7718,7.8731,10/400x200?access_token=pk.dummy')] bg-cover bg-center grayscale group-hover:grayscale-0 transition-all duration-700"></div>
-               <div className="absolute inset-0 bg-primary-600/5 mix-blend-multiply"></div>
-               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <div className="w-4 h-4 bg-primary-600 rounded-full animate-ping"></div>
-                  <div className="w-4 h-4 bg-primary-600 rounded-full absolute top-0"></div>
-               </div>
-            </div>
-            <p className="text-[10px] text-slate-400 font-bold text-center uppercase tracking-widest">Click for Live Theater View</p>
-          </div>
+        {/* Latest Detection Detail */}
+        <div className="card h-[520px] flex flex-col">
+           <div className="px-5 py-[14px] border-b border-[#dfe7f1] flex items-center justify-between shrink-0">
+              <h2 className="text-[13px] font-[700] text-[#334155] uppercase tracking-widest">Latest Detection</h2>
+              {latestAlert?.insidePatrolArea && (
+                <span className="badge badge-danger">Danger</span>
+              )}
+           </div>
+           
+           {isLoading ? (
+             <div className="flex-1 bg-[#f8fafc] animate-pulse"></div>
+           ) : !latestAlert ? (
+             <div className="flex-1 flex flex-col items-center justify-center p-10 text-center space-y-4 opacity-50">
+                <div className="w-20 h-20 bg-[#f1f5f9] rounded-[5px] flex items-center justify-center text-[#cbd5e1] border border-[#dfe7f1]">
+                   <Shield size={40} />
+                </div>
+                <p className="text-[11px] font-[700] uppercase tracking-widest text-[#64748b]">Awaiting Telemetry...</p>
+             </div>
+           ) : (
+             <div className="p-6 flex-1 flex flex-col">
+                <div className="flex flex-col items-center text-center space-y-4 mb-6">
+                   <div className="w-full aspect-video rounded-[5px] overflow-hidden border border-[#dfe7f1] shadow-md relative bg-slate-100">
+                      <img 
+                        src={latestAlert.image ? (latestAlert.image.startsWith('http') ? latestAlert.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${latestAlert.image}`) : '/assets/images/elephant-fallback.jpg'} 
+                        alt="Detection" 
+                        className="w-full h-full object-cover"
+                      />
+                   </div>
+                   <div className="w-full text-left">
+                      <h3 className="text-[16px] font-[800] text-[#0f172a] leading-tight truncate">{latestAlert.locationName || latestAlert.areaName}</h3>
+                      <p className="text-[10px] font-[600] text-[#64748b] uppercase tracking-widest mt-1.5">{safeFormat(latestAlert.detectedAt, 'PPP p')}</p>
+                   </div>
+                </div>
+                
+                <div className="space-y-0.5 flex-1">
+                   {[
+                     { label: 'Neural Confidence', value: `${(latestAlert.confidence * 100).toFixed(1)}%`, color: 'text-[#1768d1]' },
+                     { label: 'Transmission', value: latestAlert.alertStatus.toUpperCase(), color: 'text-[#119c55]' },
+                     { label: 'Patrol Boundary', value: latestAlert.insidePatrolArea ? 'BREACHED' : 'OUTSIDE', color: latestAlert.insidePatrolArea ? 'text-[#e02424]' : 'text-[#64748b]' },
+                     { label: 'Delivery Count', value: latestAlert.recipientCount || 0, color: 'text-[#0f172a]' },
+                   ].map((row, i) => (
+                     <div key={i} className="flex justify-between items-center py-3 border-b border-[#edf1f6] last:border-0">
+                        <span className="text-[10px] font-[700] text-[#64748b] uppercase tracking-widest">{row.label}</span>
+                        <span className={`text-[12px] font-[800] tracking-tight ${row.color}`}>{row.value}</span>
+                     </div>
+                   ))}
+                   
+                   <div className="pt-4 space-y-2">
+                      <div className="flex justify-between text-[10px] font-[700] text-[#64748b] uppercase tracking-widest">
+                         <span>AI Score</span>
+                         <span>{(latestAlert.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-[#f1f5f9] rounded-full overflow-hidden">
+                         <div className="h-full bg-[#1768d1] rounded-full transition-all duration-1000" style={{ width: `${latestAlert.confidence * 100}%` }}></div>
+                      </div>
+                   </div>
+                </div>
+                
+                <button 
+                  onClick={() => navigate(`/dashboard/map/${latestAlert.id || latestAlert._id}`)}
+                  className="w-full mt-6 h-11 bg-[#e02424] text-white rounded-[5px] font-[700] text-[13px] uppercase tracking-wider shadow-lg shadow-[#e02424]/10 hover:bg-[#c81e1e] transition-colors"
+                >
+                   Respond to Alert
+                </button>
+             </div>
+           )}
         </div>
       </div>
     </div>

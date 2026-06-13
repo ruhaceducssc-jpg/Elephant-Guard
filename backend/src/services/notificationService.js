@@ -4,7 +4,7 @@ const Alert = require('../models/Alert');
 const NotificationDelivery = require('../models/NotificationDelivery');
 const { sendAlert } = require('./telegramService');
 const { calculateDistance } = require('./geocodingService');
-const { normalizeAlert } = require('../utils/alertUtils');
+const { normalizeAlert, isPointInPolygon, evaluateAlertEligibility } = require('../utils/alertUtils');
 
 /**
  * Triggers notifications for an alert
@@ -17,72 +17,95 @@ const triggerAlertNotifications = async (alert, io) => {
   const normalizedAlert = normalizeAlert(alert);
 
   try {
-    // 1. Find ALL active residents
-    const allResidents = await User.find({ 
-      notificationEnabled: true
-    });
-    
-    // 2. Filter residents by geofence
-    const affectedResidents = [];
-    const affectedResidentIds = [];
-    
-    for (const resident of allResidents) {
-      if (!resident.areaLocation || !resident.areaLocation.coordinates) continue;
-
-      const resLng = resident.areaLocation.coordinates[0];
-      const resLat = resident.areaLocation.coordinates[1];
-      const radius = resident.geofenceRadiusMeters || 1000;
-      
-      const distance = calculateDistance(normalizedAlert.latitude, normalizedAlert.longitude, resLat, resLng);
-      
-      if (distance <= radius) {
-        affectedResidents.push({
-          ...resident.toObject(),
-          distanceToElephant: distance
-        });
-        affectedResidentIds.push(resident._id);
-      }
+    // 1. Identify detecting guard and their patrol area
+    const detectingGuard = await Guard.findById(alert.detectedBy);
+    if (!detectingGuard) {
+      console.error('Detecting guard not found for alert');
+      await Alert.findByIdAndUpdate(alert._id, { 
+        notificationStatus: 'none',
+        eligibilityReason: 'detecting_guard_not_found'
+      });
+      return { success: false, error: 'Detecting guard not found' };
     }
 
-    // 3. Create Delivery Records for ALL affected residents
-    const deliveries = await Promise.all(affectedResidents.map(resident => {
-      const initialStatus = !resident.telegramChatId ? 'not_sent' : 'pending';
-      const initialError = !resident.telegramChatId ? 'Telegram Chat ID missing' : '';
-      
-      return NotificationDelivery.create({
+    if (!detectingGuard.patrolArea || !detectingGuard.patrolArea.coordinates) {
+      console.log(`Guard ${detectingGuard.name} has no patrol area configured. Skipping notifications.`);
+      await Alert.findByIdAndUpdate(alert._id, { 
+        notificationStatus: 'none',
+        eligibilityReason: 'missing_guard_patrol_area'
+      });
+      return { success: true, status: 'none', count: 0 };
+    }
+
+    // 2. Check if elephant is inside guard patrol area
+    const [lng, lat] = normalizedAlert.location.coordinates;
+    const insideGuardArea = isPointInPolygon([lng, lat], detectingGuard.patrolArea);
+
+    if (!insideGuardArea) {
+      console.log('Elephant outside guard patrol area. No resident notifications.');
+      await Alert.findByIdAndUpdate(alert._id, { 
+        insidePatrolArea: false,
+        notificationStatus: 'none',
+        eligibilityReason: 'outside_guard_area'
+      });
+      return { success: true, status: 'none', count: 0 };
+    }
+
+    // 3. Find active residents REGISTERED BY THIS GUARD
+    const residents = await User.find({ 
+      registeredBy: alert.detectedBy
+    });
+    
+    // 4. Evaluate eligibility for each resident
+    const affectedResidentIds = [];
+    const eligibleResidents = [];
+
+    for (const resident of residents) {
+      const evaluation = evaluateAlertEligibility({
+        elephantLocation: normalizedAlert.location,
+        guardPatrolArea: detectingGuard.patrolArea,
+        resident
+      });
+
+      const deliveryData = {
         alertId: alert._id,
         residentId: resident._id,
         residentName: resident.name,
         phone: resident.phone,
         telegramChatId: resident.telegramChatId || 'NOT_SET',
-        status: initialStatus,
-        errorMessage: initialError,
-        distanceFromElephant: resident.distanceToElephant
-      });
-    }));
+        status: evaluation.eligible ? 'pending' : 'not_sent',
+        reason: evaluation.reason,
+        distanceFromElephant: evaluation.distanceToResidentMeters || 0,
+        residentRadiusMeters: evaluation.residentRadiusMeters || resident.geofenceRadiusMeters,
+        insideGuardArea: evaluation.insideGuardArea,
+        insideResidentGeofence: evaluation.insideResidentGeofence,
+        eligible: evaluation.eligible
+      };
 
-    // 4. Find all guards to notify
+      const delivery = await NotificationDelivery.create(deliveryData);
+
+      if (evaluation.eligible) {
+        eligibleResidents.push({ resident, delivery });
+        affectedResidentIds.push(resident._id);
+      }
+    }
+
+    // 5. Find all guards to notify (Always notify guards regardless of polygon for safety)
     const guardsToNotify = await Guard.find({ 
       telegramChatId: { $exists: true, $ne: '' } 
     });
 
-    // 5. Send messages and update delivery records
+    // 6. Send messages and update delivery records
     let successCount = 0;
     const processedChatIds = new Set();
 
-    // Notify Affected Residents
-    for (let i = 0; i < affectedResidents.length; i++) {
-      const resident = affectedResidents[i];
-      const delivery = deliveries[i];
-
-      // Skip those already marked as not_sent (missing chat id)
-      if (delivery.status === 'not_sent') continue;
-
+    // Notify Eligible Residents
+    for (const { resident, delivery } of eligibleResidents) {
       if (processedChatIds.has(resident.telegramChatId)) {
         await NotificationDelivery.findByIdAndUpdate(delivery._id, {
           status: 'sent',
           sentAt: new Date(),
-          errorMessage: 'Duplicate chat ID skipped'
+          reason: 'duplicate_chat_id_skipped'
         });
         successCount++;
         continue;
@@ -90,8 +113,8 @@ const triggerAlertNotifications = async (alert, io) => {
       
       const result = await sendAlert(resident.telegramChatId, {
         ...normalizedAlert,
-        distanceFromResident: resident.distanceToElephant,
-        residentAreaName: resident.areaLocation.areaName
+        distanceFromResident: delivery.distanceFromElephant,
+        residentAreaName: resident.village
       });
       
       if (result.success) {
@@ -120,21 +143,20 @@ const triggerAlertNotifications = async (alert, io) => {
       }
     }
 
-    // 6. Update Alert Status
-    let status = 'failed';
-    const totalPossible = affectedResidents.filter(r => r.telegramChatId).length;
-    
-    if (successCount === totalPossible && totalPossible > 0) {
+    // 7. Update Alert Status
+    let status = 'none';
+    if (successCount === eligibleResidents.length && eligibleResidents.length > 0) {
       status = 'sent';
     } else if (successCount > 0) {
       status = 'partial';
-    } else if (affectedResidents.length === 0) {
-      status = 'none';
-    } else if (totalPossible === 0) {
-      status = 'failed'; // No one had a chat ID
+    } else if (eligibleResidents.length > 0) {
+      status = 'failed';
     }
 
     const updatedAlert = await Alert.findByIdAndUpdate(alert._id, { 
+      insidePatrolArea: true,
+      notificationEligible: eligibleResidents.length > 0,
+      eligibilityReason: eligibleResidents.length > 0 ? 'residents_matched' : 'no_residents_matched',
       notificationStatus: status,
       recipientCount: successCount,
       affectedResidentIds: affectedResidentIds,
@@ -151,7 +173,10 @@ const triggerAlertNotifications = async (alert, io) => {
   } catch (err) {
     console.error(`--- [Notification Service] Critical Error for Alert ${alert._id} ---`);
     console.error(err);
-    await Alert.findByIdAndUpdate(alert._id, { notificationStatus: 'failed' });
+    await Alert.findByIdAndUpdate(alert._id, { 
+      notificationStatus: 'failed',
+      eligibilityReason: 'service_error'
+    });
     return { success: false, error: err.message };
   }
 };

@@ -1,22 +1,24 @@
 import React from 'react';
 
-const StatCard = ({ title, value, icon, trend }) => {
+const StatCard = ({ title, value, icon, trend, colorClass = 'bg-[#eaf2ff] text-[#1768d1]' }) => {
   return (
-    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-soft flex items-start justify-between group hover:border-primary-100 transition-all duration-300">
-      <div>
-        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">{title}</p>
-        <h3 className="text-2xl font-bold text-slate-900 tracking-tight">{value}</h3>
-        {trend && (
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg mt-3 inline-block uppercase tracking-wider ${
-            trend.startsWith('+') || trend === 'Live' ? 'text-success-700 bg-success-50' : 'text-primary-700 bg-primary-50'
+    <div className="card h-[110px] flex items-center p-5 gap-4 hover:border-[#1768d1] group transition-all">
+      <div className={`w-12 h-12 rounded-[5px] flex items-center justify-center shrink-0 transition-colors border border-black/5 ${colorClass}`}>
+        {React.cloneElement(icon, { size: 24, strokeWidth: 2.5 })}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10.5px] font-[700] text-[#64748b] uppercase tracking-widest truncate">{title}</p>
+        <h3 className="text-[28px] font-[800] text-[#0f172a] leading-tight mt-1">{value}</h3>
+      </div>
+      {trend && (
+        <div className="text-right">
+          <span className={`text-[10px] font-[700] px-2 py-1 rounded-[5px] uppercase tracking-wider border ${
+            trend.startsWith('+') || trend === 'Live Nodes' || trend === 'Live' ? 'text-[#0e7a42] bg-[#edfcf4] border-[#b7efcf]' : 'text-[#1768d1] bg-[#eaf2ff] border-[#b7efcf]'
           }`}>
             {trend}
           </span>
-        )}
-      </div>
-      <div className="p-3.5 bg-slate-50 rounded-xl group-hover:bg-primary-600 group-hover:text-white transition-all duration-500 shadow-sm border border-slate-100">
-        {React.cloneElement(icon, { size: 20 })}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

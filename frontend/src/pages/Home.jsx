@@ -1,36 +1,40 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldAlert, ArrowRight, MapPin, Bell, Smartphone, ShieldCheck, Activity, Users, Zap } from 'lucide-react';
+import { ShieldAlert, ArrowRight, MapPin, Bell, Smartphone, ShieldCheck, Activity, Users, Zap, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Home = () => {
   const { isAuthenticated } = useAuth();
 
   return (
-    <div className="min-h-screen bg-white text-secondary-900 font-inter selection:bg-primary-100">
+    <div className="min-h-screen bg-[#f5f8fc] text-[#0f172a] font-sans selection:bg-[#eaf2ff]">
       {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-secondary-100">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20">
-                <ShieldAlert className="text-white" size={24} />
-             </div>
-             <span className="font-black text-xl uppercase tracking-tighter">
-                Elephant <span className="text-primary-600">Guard</span>
-             </span>
-          </div>
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#dfe7f1] shadow-sm h-[86px] flex items-center">
+        <div className="max-w-[1920px] w-full mx-auto px-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
+             <div className="w-[52px] h-[52px] bg-[#0b2d63] rounded-[5px] flex items-center justify-center shadow-lg shadow-[#0b2d63]/10 transition-transform hover:scale-[1.02]">
+                <img src="/lanka-beacon-icon.svg" alt="Lanka Beacon" className="w-[34px] h-[34px]" />
+             </div>
+             <div className="flex flex-col">
+                <span className="font-[800] text-[24px] text-[#0b2d63] tracking-tighter leading-none uppercase">
+                   Lanka <span className="text-[#1768d1]">Beacon</span>
+                </span>
+                <span className="text-[9px] font-[700] text-[#64748b] uppercase tracking-[0.2em] mt-1">Operational Network</span>
+             </div>
+          </div>
+          <div className="flex items-center gap-6">
              {isAuthenticated ? (
-               <Link to="/dashboard" className="btn btn-primary px-8 uppercase tracking-widest text-[10px] font-black">
-                  Control Center
+               <Link to="/dashboard" className="h-11 px-8 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[11px] uppercase tracking-widest shadow-xl shadow-[#1768d1]/20 flex items-center gap-2 hover:bg-[#0f56b3] transition-all">
+                  Lanka Beacon Command
+                  <ArrowRight size={14} />
                </Link>
              ) : (
                <>
-                 <Link to="/login" className="text-xs font-black uppercase tracking-widest text-secondary-500 hover:text-primary-600 transition-colors">
+                 <Link to="/login" className="text-[11px] font-[800] uppercase tracking-widest text-[#64748b] hover:text-[#1768d1] transition-all">
                     Login
                  </Link>
-                 <Link to="/register" className="btn btn-primary px-8 uppercase tracking-widest text-[10px] font-black shadow-xl shadow-primary-500/20">
-                    Join Network
+                 <Link to="/register" className="h-11 px-8 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[11px] uppercase tracking-widest shadow-xl shadow-[#1768d1]/20 flex items-center gap-2 hover:bg-[#0f56b3] transition-all">
+                    Join Lanka Beacon
                  </Link>
                </>
              )}
@@ -39,72 +43,74 @@ const Home = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-40 pb-20 px-6 relative overflow-hidden">
-         <div className="absolute top-0 right-0 w-1/2 h-full bg-secondary-50 skew-x-12 translate-x-20 -z-10 rounded-l-[10rem]"></div>
-         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
-            <div className="space-y-10 animate-in fade-in slide-in-from-left-8 duration-700">
-               <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-primary-100">
-                  <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></div>
-                  Strategic Protection Network
+      <section className="pt-[180px] pb-24 px-8 relative overflow-hidden">
+         {/* Decorative Background Elements */}
+         <div className="absolute top-0 right-0 w-1/3 h-full bg-[#eaf2ff]/30 -z-10 rounded-l-[50%] blur-[120px]"></div>
+         <div className="absolute bottom-0 left-0 w-1/4 h-1/2 bg-[#edfcf4]/30 -z-10 rounded-r-[50%] blur-[100px]"></div>
+
+         <div className="max-w-[1920px] mx-auto grid lg:grid-cols-2 gap-24 items-center">
+            <div className="space-y-12 animate-in fade-in slide-in-from-left-8 duration-700">
+               <div className="inline-flex items-center gap-3 px-5 py-2.5 bg-[#eaf2ff] text-[#1768d1] rounded-[5px] text-[10px] font-[800] uppercase tracking-[0.2em] border border-[#1768d1]/10">
+                  <div className="w-2 h-2 bg-[#2878e8] rounded-full animate-pulse shadow-[0_0_5px_rgba(40,120,232,0.8)]"></div>
+                  Community Early Warning Network
                </div>
-               <h1 className="text-6xl lg:text-7xl font-black text-secondary-900 leading-[1.05] uppercase tracking-tighter">
-                  Securing the <span className="text-primary-600">Frontier</span> of Sri Lanka
+               <h1 className="text-6xl lg:text-[84px] font-[800] text-[#0f172a] leading-[0.95] tracking-tighter uppercase">
+                  Lanka Beacon: <br/><span className="text-[#1768d1]">Community Safety</span> First
                </h1>
-               <p className="text-lg text-secondary-500 font-medium leading-relaxed max-w-xl uppercase tracking-wide">
-                  Advanced AI Biosensors & Real-time Resident Relay System. Bridging the gap between wildlife conservation and community safety.
+               <p className="text-lg text-[#64748b] font-[500] leading-relaxed max-w-xl uppercase tracking-wider">
+                  AI-Powered Elephant Early Warning and Community Safety System. Bridging the gap between wildlife conservation and human protection.
                </p>
-               <div className="flex flex-col sm:flex-row gap-4">
-                  <Link to="/register" className="btn btn-primary px-10 py-5 text-sm uppercase tracking-[0.2em] font-black shadow-2xl shadow-primary-500/30 active:scale-95">
+               <div className="flex flex-col sm:flex-row gap-6">
+                  <Link to="/register" className="h-16 px-12 bg-[#1768d1] text-white rounded-[5px] text-[13px] uppercase tracking-[0.2em] font-[800] shadow-2xl shadow-[#1768d1]/20 hover:bg-[#0f56b3] transition-all flex items-center gap-3 active:scale-95">
                      Initiate Deployment
                      <ArrowRight size={20} />
                   </Link>
                   <div className="flex items-center gap-6 px-4">
                      <div className="flex -space-x-3">
                         {[1,2,3,4].map(i => (
-                          <div key={i} className="w-10 h-10 rounded-full border-4 border-white bg-secondary-100 flex items-center justify-center text-[10px] font-black text-secondary-400 overflow-hidden">
+                          <div key={i} className="w-12 h-12 rounded-full border-4 border-white bg-[#f1f5f9] flex items-center justify-center text-[10px] font-[800] text-[#94a3b8] overflow-hidden shadow-md">
                              <img src={`/assets/images/user${i}.jpg`} alt="Guard" className="w-full h-full object-cover" />
                           </div>
                         ))}
                      </div>
-                     <p className="text-[10px] font-black text-secondary-400 uppercase tracking-widest leading-tight">
-                        <span className="text-secondary-900">450+ Verified</span> <br/> Wildlife Officers
+                     <p className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest leading-tight">
+                        <span className="text-[#0f172a]">450+ Verified</span> <br/> Wildlife Officers
                      </p>
                   </div>
                </div>
             </div>
 
             <div className="relative animate-in fade-in zoom-in-95 duration-1000">
-               <div className="bg-white p-6 rounded-[4rem] shadow-2xl border border-secondary-100 relative z-10 group">
-                  <div className="bg-secondary-900 rounded-[3rem] overflow-hidden aspect-[4/3] relative">
+               <div className="bg-white p-8 rounded-[5px] shadow-2xl border border-[#dfe7f1] relative z-10 group">
+                  <div className="bg-[#0f172a] rounded-[5px] overflow-hidden aspect-[4/3] relative border border-[#dfe7f1]">
                      <img src="/assets/images/hero.jpg" alt="Elephant Protection" className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-1000 group-hover:scale-105" />
-                     <div className="absolute inset-0 bg-gradient-to-t from-secondary-900 to-transparent"></div>
+                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] to-transparent"></div>
                      <div className="absolute bottom-10 left-10 right-10 flex items-end justify-between">
-                        <div className="space-y-2">
-                           <p className="text-[10px] font-black text-primary-400 uppercase tracking-[0.3em]">Operational Area</p>
-                           <h3 className="text-2xl font-black text-white uppercase tracking-tighter leading-none">Udawalawe Sector</h3>
+                        <div className="space-y-3">
+                           <p className="text-[10px] font-[800] text-[#1768d1] uppercase tracking-[0.4em]">Operational Area</p>
+                           <h3 className="text-3xl font-[800] text-white uppercase tracking-tighter leading-none">Udawalawe Sector</h3>
                         </div>
-                        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-primary-600 shadow-xl border-4 border-primary-600/20">
-                           <Zap size={28} />
+                        <div className="w-16 h-16 bg-[#1768d1] rounded-[5px] flex items-center justify-center text-white shadow-2xl shadow-[#1768d1]/30 border border-white/20 transition-transform group-hover:rotate-12">
+                           <Zap size={32} />
                         </div>
                      </div>
                   </div>
+                  {/* Decorative Scan Line */}
+                  <div className="absolute top-8 left-8 right-8 h-0.5 bg-[#18b866]/30 animate-scan"></div>
                </div>
-               {/* Floating elements */}
-               <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary-100/50 rounded-[3rem] -z-10 animate-blob"></div>
-               <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-secondary-50 rounded-[4rem] -z-10 animate-blob animation-delay-2000"></div>
             </div>
          </div>
       </section>
 
       {/* Features Grid */}
-      <section className="py-32 px-6 bg-secondary-50/50">
-         <div className="max-w-7xl mx-auto space-y-20">
+      <section className="py-32 px-8 bg-white border-y border-[#dfe7f1]">
+         <div className="max-w-[1920px] mx-auto space-y-24">
             <div className="text-center space-y-6">
-               <h2 className="text-4xl font-black text-secondary-900 uppercase tracking-tighter">Integrated <span className="text-primary-600">Operational Logic</span></h2>
-               <p className="text-secondary-400 font-bold uppercase tracking-[0.2em] text-xs">A unified ecosystem for tactical response</p>
+               <h2 className="text-5xl font-[800] text-[#0f172a] uppercase tracking-tighter">Integrated <span className="text-[#1768d1]">Operational Logic</span></h2>
+               <p className="text-[#94a3b8] font-[800] uppercase tracking-[0.3em] text-xs">A unified ecosystem for tactical response</p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                <FeatureCard 
                   icon={<Activity size={32} />} 
                   title="AI Detection" 
@@ -113,7 +119,7 @@ const Home = () => {
                <FeatureCard 
                   icon={<Bell size={32} />} 
                   title="Instant Relay" 
-                  desc="Multi-channel notification protocol delivering critical intel via Telegram, Email, and SMS."
+                  desc="Multi-channel notification protocol delivering critical intel via Telegram Relay mesh."
                />
                <FeatureCard 
                   icon={<MapPin size={32} />} 
@@ -128,7 +134,7 @@ const Home = () => {
                <FeatureCard 
                   icon={<ShieldCheck size={32} />} 
                   title="Safe Zones" 
-                  desc="Automated geofencing logic establishing virtual safety barriers around local villages."
+                  desc="Automated geofencing logic establishing virtual safety barriers around villages."
                />
                <FeatureCard 
                   icon={<Smartphone size={32} />} 
@@ -140,37 +146,50 @@ const Home = () => {
       </section>
 
       {/* Footer */}
-      <footer className="py-20 px-6 border-t border-secondary-100">
-         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-10">
-            <div className="flex items-center gap-3">
-               <div className="w-8 h-8 bg-secondary-900 rounded-lg flex items-center justify-center shadow-lg shadow-secondary-900/20">
-                  <ShieldAlert className="text-white" size={18} />
+      <footer className="py-24 px-8 border-t border-[#dfe7f1] bg-[#f8fafc]">
+         <div className="max-w-[1920px] mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
+            <div className="flex items-center gap-4">
+               <div className="w-10 h-10 bg-[#0f172a] rounded-[5px] flex items-center justify-center shadow-lg shadow-[#0f172a]/20">
+                  <img src="/lanka-beacon-icon.svg" alt="Lanka Beacon" className="w-6 h-6" />
                </div>
-               <span className="font-black text-lg uppercase tracking-tighter">
-                  Elephant <span className="text-primary-600">Guard</span>
-               </span>
+               <div className="flex flex-col">
+                  <span className="font-[800] text-xl uppercase tracking-tighter leading-none">
+                     Lanka <span className="text-[#1768d1]">Beacon</span>
+                  </span>
+                  <span className="text-[8px] font-[800] text-[#94a3b8] uppercase tracking-widest mt-1">Safety First · Network Stable</span>
+               </div>
             </div>
-            <p className="text-[10px] font-black text-secondary-400 uppercase tracking-[0.2em]">
-               © 2026 Department of Wildlife Conservation · National Security Intelligence
+            <p className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em] text-center">
+               © 2026 Lanka Beacon Network · AI-Powered Elephant Early Warning System
             </p>
-            <div className="flex gap-8">
-               <a href="#" className="text-[10px] font-black text-secondary-500 hover:text-primary-600 transition-colors uppercase tracking-widest">Protocol</a>
-               <a href="#" className="text-[10px] font-black text-secondary-500 hover:text-primary-600 transition-colors uppercase tracking-widest">Encryption</a>
-               <a href="#" className="text-[10px] font-black text-secondary-500 hover:text-primary-600 transition-colors uppercase tracking-widest">Legal</a>
+            <div className="flex gap-10">
+               <a href="#" className="text-[10px] font-[800] text-[#64748b] hover:text-[#1768d1] transition-colors uppercase tracking-widest">Protocol</a>
+               <a href="#" className="text-[10px] font-[800] text-[#64748b] hover:text-[#1768d1] transition-colors uppercase tracking-widest">Encryption</a>
+               <a href="#" className="text-[10px] font-[800] text-[#64748b] hover:text-[#1768d1] transition-colors uppercase tracking-widest">Legal</a>
             </div>
          </div>
       </footer>
+      
+      <style>{`
+        @keyframes scan {
+          from { top: 32px; }
+          to { top: calc(100% - 32px); }
+        }
+        .animate-scan {
+          animation: scan 4s linear infinite;
+        }
+      `}</style>
     </div>
   );
 };
 
 const FeatureCard = ({ icon, title, desc }) => (
-  <div className="bg-white p-10 rounded-[3rem] border border-secondary-100 shadow-premium hover:border-primary-300 transition-all duration-500 group">
-    <div className="w-16 h-16 bg-secondary-50 text-secondary-400 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary-600 group-hover:text-white transition-all duration-500 shadow-inner group-hover:shadow-lg group-hover:shadow-primary-500/20 group-hover:-translate-y-2">
-      {icon}
+  <div className="bg-white p-12 rounded-[5px] border border-[#dfe7f1] shadow-sm hover:border-[#1768d1]/30 hover:shadow-xl transition-all duration-500 group">
+    <div className="w-16 h-16 bg-[#f4f8ff] text-[#1768d1] rounded-[5px] flex items-center justify-center mb-10 group-hover:bg-[#1768d1] group-hover:text-white transition-all duration-500 shadow-inner group-hover:shadow-lg group-hover:shadow-[#1768d1]/20 group-hover:-translate-y-2 border border-[#eaf2ff]">
+      {React.cloneElement(icon, { size: 32, strokeWidth: 2.5 })}
     </div>
-    <h3 className="text-xl font-black text-secondary-900 mb-4 uppercase tracking-tighter leading-none">{title}</h3>
-    <p className="text-secondary-400 font-medium leading-relaxed text-sm uppercase tracking-wide">{desc}</p>
+    <h3 className="text-xl font-[800] text-[#0f172a] mb-5 uppercase tracking-tighter leading-none">{title}</h3>
+    <p className="text-[#64748b] font-[600] leading-relaxed text-[13px] uppercase tracking-wide opacity-80">{desc}</p>
   </div>
 );
 

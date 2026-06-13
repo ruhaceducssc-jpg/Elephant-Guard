@@ -1,7 +1,7 @@
 {
-  "name": "elephant-alert-backend",
+  "name": "lanka-beacon-backend",
   "version": "1.0.0",
-  "description": "AI-powered elephant detection and alert system backend",
+  "description": "Lanka Beacon AI-powered elephant early-warning and community-safety platform",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -16,7 +16,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^7.8.9",
     "multer": "^1.4.5-lts.1",
-    "node-telegram-bot-api": "^0.64.0",
+    "node-telegram-bot-api": "^0.63.0",
     "socket.io": "^4.7.2"
   },
   "devDependencies": {

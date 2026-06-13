@@ -25,13 +25,30 @@ exports.registerGuard = async (req, res) => {
       return res.status(400).json({ message: 'Guard already exists with this email' });
     }
 
+    // Validate Patrol Area if provided
+    let validPatrolArea = null;
+    let pointCount = 0;
+    if (patrolArea) {
+      if (patrolArea.type !== 'Polygon' || !patrolArea.coordinates || !patrolArea.coordinates[0]) {
+        return res.status(400).json({ message: 'Invalid patrol area format' });
+      }
+      const coords = patrolArea.coordinates[0];
+      if (coords.length < 4) {
+        return res.status(400).json({ message: 'Patrol area must have at least 3 points' });
+      }
+      validPatrolArea = patrolArea;
+      pointCount = coords.length;
+    }
+
     const guard = await Guard.create({
       name,
       email,
       password,
       assignedArea,
       telegramChatId: telegramChatId || '',
-      patrolArea: patrolArea || null,
+      patrolArea: validPatrolArea,
+      patrolAreaPointCount: pointCount,
+      patrolAreaUpdatedAt: patrolArea ? new Date() : undefined
     });
 
     if (guard) {
