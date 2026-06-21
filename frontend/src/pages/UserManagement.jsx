@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   UserPlus, Search, Phone, MapPin, Trash2, Edit2, User, 
   CheckCircle, X, Shield, Activity, Map as MapIcon, 
-  Navigation, Send, RefreshCw, Info, Zap
+  Navigation, Send, RefreshCw
 } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
@@ -140,12 +140,11 @@ const UserManagement = () => {
           className="h-11 px-8 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-[#0f56b3] transition-all shadow-xl shadow-[#1768d1]/10"
         >
           <UserPlus size={16} />
-          Register New Node
+          Register Resident
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-[14px]">
-        <div className="lg:col-span-8 space-y-[14px]">
+      <div className="space-y-[14px]">
            <div className="card p-3 flex items-center gap-3 border-[#dfe7f1]">
               <div className="relative flex-1">
                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#cbd5e1]" size={18} />
@@ -248,52 +247,8 @@ const UserManagement = () => {
                        </tbody>
                     </table>
                  )}
-              </div>
-           </div>
-        </div>
-
-        <div className="lg:col-span-4 space-y-[14px]">
-           <div className="card p-6 bg-[#0b2d63] text-white relative overflow-hidden group border-none">
-              <div className="relative z-10 space-y-6">
-                 <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 bg-white/10 rounded-[5px] flex items-center justify-center border border-white/10 shadow-lg">
-                       <Zap size={22} className="text-[#f59e0b]" />
-                    </div>
-                    <h3 className="font-[800] text-[11px] uppercase tracking-[0.2em]">Network Intelligence</h3>
-                 </div>
-                 <p className="text-[12.5px] text-[#eaf2ff]/80 font-[500] leading-relaxed uppercase tracking-wider">
-                    Community nodes are prioritized by biological signature proximity. Notifications are dispatched via the high-priority Telegram Relay mesh.
-                 </p>
-                 <div className="pt-2 flex items-baseline gap-3 border-t border-white/10 mt-6 pt-6">
-                    <span className="text-[36px] font-[800] leading-none tracking-tighter">{users.length}</span>
-                    <span className="text-[10px] font-[800] text-[#2878e8] uppercase tracking-[0.2em]">Operational Nodes</span>
-                 </div>
-              </div>
-              <Shield className="absolute -right-8 -bottom-8 text-white/5 transition-transform duration-1000 group-hover:scale-110" size={180} />
-           </div>
-
-           <div className="card p-6 space-y-5 border-[#dfe7f1] bg-white">
-              <h3 className="text-[11px] font-[800] text-[#0f172a] uppercase tracking-[0.2em] flex items-center gap-2.5">
-                 <Info size={16} className="text-[#1768d1]" />
-                 Registration Protocol
-              </h3>
-              <ul className="space-y-4">
-                 {[
-                   'Acquire community Telegram Chat ID',
-                   'Verify GPS telemetry on site',
-                   'Configure adaptive geofence radius',
-                   'Sync node with local sector mesh'
-                 ].map((step, i) => (
-                   <li key={i} className="flex items-start gap-4 text-[12.5px] font-[600] text-[#64748b]">
-                      <div className="w-6 h-6 rounded-[5px] bg-[#f8fafc] flex items-center justify-center text-[11px] font-[800] text-[#1768d1] shrink-0 border border-[#dfe7f1] shadow-sm">
-                         {i + 1}
-                      </div>
-                      <span className="mt-1 leading-tight uppercase tracking-tight">{step}</span>
-                   </li>
-                 ))}
-              </ul>
-           </div>
-        </div>
+               </div>
+            </div>
       </div>
 
       {showModal && (

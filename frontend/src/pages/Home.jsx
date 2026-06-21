@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ShieldAlert, ArrowRight, MapPin, Bell, Smartphone, ShieldCheck, Activity, Users, Zap, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import lankaBeaconLogo from '../../design-reference/logo.png';
 
 const Home = () => {
   const { isAuthenticated } = useAuth();
@@ -13,7 +14,7 @@ const Home = () => {
         <div className="max-w-[1920px] w-full mx-auto px-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
              <div className="w-[52px] h-[52px] bg-[#0b2d63] rounded-[5px] flex items-center justify-center shadow-lg shadow-[#0b2d63]/10 transition-transform hover:scale-[1.02]">
-                <img src="/lanka-beacon-icon.svg" alt="Lanka Beacon" className="w-[34px] h-[34px]" />
+                <img src={lankaBeaconLogo} alt="Lanka Beacon" className="w-[42px] h-[42px] object-contain" />
              </div>
              <div className="flex flex-col">
                 <span className="font-[800] text-[24px] text-[#0b2d63] tracking-tighter leading-none uppercase">
@@ -150,7 +151,7 @@ const Home = () => {
          <div className="max-w-[1920px] mx-auto flex flex-col md:flex-row justify-between items-center gap-12">
             <div className="flex items-center gap-4">
                <div className="w-10 h-10 bg-[#0f172a] rounded-[5px] flex items-center justify-center shadow-lg shadow-[#0f172a]/20">
-                  <img src="/lanka-beacon-icon.svg" alt="Lanka Beacon" className="w-6 h-6" />
+                  <img src={lankaBeaconLogo} alt="Lanka Beacon" className="w-8 h-8 object-contain" />
                </div>
                <div className="flex flex-col">
                   <span className="font-[800] text-xl uppercase tracking-tighter leading-none">

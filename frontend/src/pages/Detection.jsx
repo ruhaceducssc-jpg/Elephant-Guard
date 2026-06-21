@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Camera, MapPin, AlertTriangle, ShieldCheck, RefreshCw, Upload, Image as ImageIcon, X, Zap, Search, Info, Activity, CheckCircle, Brain, Clock, Shield } from 'lucide-react';
+import { Camera, MapPin, AlertTriangle, ShieldCheck, RefreshCw, Upload, Image as ImageIcon, X, Zap, Search, Info, Activity, CheckCircle, Brain, Clock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
 import { useNavigate } from 'react-router-dom';
@@ -471,17 +471,6 @@ const Detection = () => {
             )}
           </div>
           
-          <div className="card p-6 flex items-start gap-6 bg-white border-[#dfe7f1]">
-             <div className="w-14 h-14 bg-[#f4f8ff] text-[#1768d1] rounded-[5px] flex items-center justify-center shrink-0 shadow-sm border border-[#eaf2ff]">
-                <Shield size={26} />
-             </div>
-             <div>
-                <h4 className="text-[14px] font-[800] text-[#0f172a] mb-2 uppercase tracking-widest">AI Detection Protocol</h4>
-                <p className="text-[13px] text-[#64748b] leading-relaxed font-[500]">
-                  Lanka Beacon utilizes a high-precision AI model to identify elephants within surveillance feeds. To maintain system efficiency and prevent notification fatigue, the system implements a mandatory cooldown period between automated community alerts.
-                </p>
-             </div>
-          </div>
         </div>
 
         <div className="lg:col-span-4 flex flex-col gap-[14px]">
@@ -516,15 +505,6 @@ const Detection = () => {
                       </div>
 
                       <div className="grid grid-cols-1 gap-3">
-                         <div className="p-5 bg-[#f8fafc] rounded-[5px] border border-[#dfe7f1]">
-                            <p className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest">Confidence Score</p>
-                            <div className="flex items-end justify-between mt-2">
-                               <p className="text-[28px] font-[800] text-[#0f172a] leading-none">{(detectionResult.confidence * 100).toFixed(1)}%</p>
-                               <div className="w-24 h-2 bg-[#e2e8f0] rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${detectionResult.detected ? 'bg-[#ef3535]' : 'bg-[#18b866]'}`} style={{ width: `${detectionResult.confidence * 100}%` }}></div>
-                               </div>
-                            </div>
-                         </div>
                          <div className="p-5 bg-[#f8fafc] rounded-[5px] border border-[#dfe7f1]">
                             <p className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest">Detection Type</p>
                             <p className={`text-[13px] font-[800] mt-2 uppercase tracking-widest truncate ${detectionResult.locationName.includes('Duplicate') ? 'text-[#1768d1]' : 'text-[#0f172a]'}`}>

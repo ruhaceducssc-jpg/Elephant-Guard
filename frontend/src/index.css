@@ -252,8 +252,9 @@
 }
 
 .elephant-detection-marker {
-  width: 42px;
-  height: 42px;
+  position: relative;
+  width: 46px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -268,10 +269,130 @@
 }
 
 .elephant-detection-marker img {
+  position: relative;
+  z-index: 3;
   width: 100%;
   height: 100%;
   display: block;
   object-fit: contain;
+}
+
+.lb-selected-elephant-marker::before,
+.lb-selected-elephant-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  border: 2px solid rgba(239, 53, 53, 0.78);
+  border-radius: 999px;
+  transform: translate(-50%, -50%) scale(0.45);
+  animation: lb-red-radio-wave 1.6s ease-out infinite;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.lb-selected-elephant-marker::after {
+  animation-delay: 0.8s;
+}
+
+.resident-home-marker-wrapper {
+  background: transparent;
+  border: 0;
+}
+
+.lb-resident-home-marker {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 4px 7px rgba(15, 23, 42, 0.24));
+  transition: transform 0.2s ease-out, filter 0.2s ease-out;
+}
+
+.lb-resident-home-marker img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.lb-resident-home-marker:hover {
+  transform: translateY(-1px) scale(1.08);
+  filter: drop-shadow(0 6px 10px rgba(37, 99, 235, 0.32));
+}
+
+.lb-resident-home-marker--selected {
+  transform: translateY(-1px) scale(1.08);
+  filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.78));
+}
+
+.leaflet-overlay-pane path.lb-resident-geofence-circle {
+  pointer-events: none;
+}
+
+.leaflet-overlay-pane path.lb-resident-radio-wave-circle {
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lb-resident-geofence-wave 2.2s ease-out infinite;
+  animation-fill-mode: both;
+}
+
+.leaflet-overlay-pane path.lb-resident-radio-wave-circle--delayed {
+  animation-delay: 1.1s;
+}
+
+@keyframes lb-resident-geofence-wave {
+  0% {
+    transform: scale(0.08);
+    stroke-opacity: 0.9;
+    stroke-width: 4;
+  }
+
+  65% {
+    stroke-opacity: 0.45;
+    stroke-width: 2.5;
+  }
+
+  100% {
+    transform: scale(1);
+    stroke-opacity: 0;
+    stroke-width: 1;
+  }
+}
+
+@keyframes lb-red-radio-wave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.45);
+    opacity: 0.9;
+  }
+
+  70% {
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.9);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-selected-elephant-marker::before,
+  .lb-selected-elephant-marker::after {
+    animation: none;
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1.35);
+  }
+
+  .leaflet-overlay-pane path.lb-resident-radio-wave-circle {
+    animation: none;
+    transform: none;
+    stroke-opacity: 0.5;
+  }
 }
 
 /* Fix for Leaflet Map Height */

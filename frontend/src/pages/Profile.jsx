@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  User, Shield, MapPin, Save, Lock, Send, 
+import {
+  User, MapPin, Save, Lock, Send,
   Eye, EyeOff, ShieldAlert, ChevronRight,
   Camera, AlertTriangle, RefreshCw, Key, Map as MapIcon,
-  Zap, X, CheckCircle
+  Zap, X, CheckCircle, LogOut
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -12,7 +12,7 @@ import { format, isValid } from 'date-fns';
 import PatrolAreaSelector from '../components/map/PatrolAreaSelector';
 
 const Profile = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('settings');
   const [isLoading, setIsLoading] = useState(false);
   const [isSecurityLoading, setIsSecurityLoading] = useState(false);
@@ -185,6 +185,7 @@ const Profile = () => {
               ].map((tab) => (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={`w-full flex items-center gap-4 px-5 py-4 rounded-[5px] font-[700] text-[13.5px] transition-all border ${
                     activeTab === tab.id 
@@ -196,26 +197,15 @@ const Profile = () => {
                   {tab.label}
                 </button>
               ))}
-           </div>
-
-           <div className="card p-6 bg-[#0f172a] text-white relative overflow-hidden group border-none">
-              <div className="relative z-10 space-y-6">
-                 <h3 className="font-[800] text-[10px] uppercase tracking-[0.2em] text-[#94a3b8]">Operational Status</h3>
-                 <div className="flex items-center gap-5">
-                    <div className="w-12 h-12 rounded-[5px] bg-white/10 flex items-center justify-center border border-white/10 shadow-lg">
-                       <Shield size={24} className="text-[#2878e8]" />
-                    </div>
-                    <div className="space-y-1">
-                       <p className="text-[13px] font-[800] tracking-tight uppercase">Identity Verified</p>
-                       <p className="text-[10px] font-[700] text-[#94a3b8] uppercase tracking-widest leading-none">Security Tier 01</p>
-                    </div>
-                 </div>
-                 <div className="pt-2 border-t border-white/10 mt-6 flex justify-between items-center">
-                    <span className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Network Link</span>
-                    <span className="text-[10px] font-[800] text-[#18b866] uppercase tracking-widest">STABLE</span>
-                 </div>
-              </div>
-              <ShieldAlert className="absolute -right-6 -bottom-6 text-white/5 transition-transform duration-1000 group-hover:scale-110" size={120} />
+              <div className="h-px bg-[#edf1f6] mx-3 my-1" />
+              <button
+                type="button"
+                onClick={logout}
+                className="w-full flex items-center gap-4 px-5 py-4 rounded-[5px] font-[700] text-[13.5px] text-[#e02424] transition-all border border-transparent hover:bg-[#fff1f1] hover:border-[#facaca] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e02424]/30"
+              >
+                <LogOut size={18} />
+                Logout
+              </button>
            </div>
         </div>
 
@@ -256,7 +246,7 @@ const Profile = () => {
                        <div className="pt-8 border-t border-[#edf1f6]">
                           <button type="submit" disabled={isLoading} className="h-12 px-10 bg-[#1768d1] text-white rounded-[5px] font-[800] text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[#1768d1]/10 hover:bg-[#0f56b3] transition-all flex items-center gap-3">
                              {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
-                             Update Account Matrix
+                             Update Account
                           </button>
                        </div>
                     </form>

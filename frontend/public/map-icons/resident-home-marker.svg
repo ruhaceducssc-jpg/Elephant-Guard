@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Resident home marker</title>
+  <defs>
+    <linearGradient id="community" x1="14" y1="7" x2="51" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-20%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0f172a" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <path
+    d="M32 3C17.5 3 7 13 7 26.8c0 15 13.2 26 25 32.2 11.8-6.2 25-17.2 25-32.2C57 13 46.5 3 32 3Z"
+    fill="url(#community)"
+    stroke="#fff"
+    stroke-width="2.5"
+    filter="url(#shadow)"
+  />
+  <circle cx="32" cy="26.5" r="18" fill="#1e40af" fill-opacity=".24" stroke="#bfdbfe" stroke-opacity=".8"/>
+  <path d="m18.5 27.4 13.5-11 13.5 11v14.1H35.2v-8.8h-6.4v8.8H18.5V27.4Z" fill="#fff"/>
+  <path d="m16.2 27.8 15.8-13 15.8 13-3 3.4L32 20.7 19.2 31.2l-3-3.4Z" fill="#dbeafe"/>
+  <rect x="22.8" y="29.2" width="5.2" height="5.2" rx="1" fill="#2563eb"/>
+  <rect x="36" y="29.2" width="5.2" height="5.2" rx="1" fill="#2563eb"/>
+</svg>

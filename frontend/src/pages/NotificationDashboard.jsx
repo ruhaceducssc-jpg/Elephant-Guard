@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Search, CheckCircle, XCircle, Clock, User, 
-  ShieldAlert, BarChart3, Send, RotateCcw, Activity, Zap, 
+  ShieldAlert, Send, RotateCcw, Activity, Zap,
   RefreshCw, Info, AlertTriangle, ShieldCheck
 } from 'lucide-react';
 import api from '../services/api';
@@ -233,7 +233,7 @@ const NotificationDashboard = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-[14px]">
         {/* Left Panel: Detection Events */}
-        <div className="lg:col-span-4 space-y-[14px]">
+        <div className="lg:col-span-4">
           <div className="card flex flex-col max-h-[700px] border-[#dfe7f1]">
             <div className="px-6 py-[18px] border-b border-[#dfe7f1] bg-[#f8fafc] flex justify-between items-center shrink-0">
                <h2 className="text-[11px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em]">Detection Event Log</h2>
@@ -291,39 +291,6 @@ const NotificationDashboard = () => {
               )}
             </div>
           </div>
-
-          {selectedEvent && (
-            <div className="card p-6 relative overflow-hidden group border-[#dfe7f1]">
-              <div className="relative z-10 space-y-6">
-                <div className="flex items-center gap-3">
-                   <div className="w-11 h-11 bg-[#f4f8ff] rounded-[5px] flex items-center justify-center border border-[#eaf2ff]">
-                     <ShieldCheck size={22} className="text-[#1768d1]" />
-                   </div>
-                   <h3 className="font-[800] text-[#0f172a] text-[13px] uppercase tracking-widest">Detection Confidence</h3>
-                </div>
-                <div className="space-y-4">
-                   <div className="flex justify-between items-center text-[10px] font-[700] uppercase tracking-widest">
-                      <span className="text-[#64748b]">AI Score</span>
-                      <span className="text-[#1768d1]">{(selectedEvent.confidence * 100).toFixed(1)}%</span>
-                   </div>
-                   <div className="w-full bg-[#f1f5f9] h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-[#1768d1] h-full rounded-full transition-all duration-1000" style={{ width: `${selectedEvent.confidence * 100}%` }}></div>
-                   </div>
-                   <div className="grid grid-cols-2 gap-4 pt-2">
-                      <div className="space-y-1.5">
-                        <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-widest">System Status</p>
-                        <p className="text-[11px] font-[800] text-[#334155] uppercase">Operational</p>
-                      </div>
-                      <div className="space-y-1.5 text-right">
-                        <p className="text-[9px] font-[700] text-[#94a3b8] uppercase tracking-widest">Alert Status</p>
-                        <p className={`text-[11px] font-[800] uppercase ${selectedEvent.status === 'active' ? 'text-[#e02424]' : 'text-[#119c55]'}`}>{selectedEvent.status}</p>
-                      </div>
-                   </div>
-                </div>
-              </div>
-              <BarChart3 className="absolute -right-6 -bottom-6 text-[#1768d1] transition-all duration-1000 group-hover:scale-110 opacity-[0.03]" size={140} />
-            </div>
-          )}
         </div>
 
         {/* Right Panel: Delivery Details */}

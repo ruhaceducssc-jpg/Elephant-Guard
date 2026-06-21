@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Elephant detection marker</title>
+  <defs>
+    <linearGradient id="danger" x1="14" y1="8" x2="51" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-20%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0f172a" flood-opacity=".32"/>
+    </filter>
+  </defs>
+  <path
+    d="M32 3C16.9 3 6 13.4 6 27.6c0 15.6 13.8 27 26 33.4 12.2-6.4 26-17.8 26-33.4C58 13.4 47.1 3 32 3Z"
+    fill="url(#danger)"
+    stroke="#fff"
+    stroke-width="2.5"
+    filter="url(#shadow)"
+  />
+  <circle cx="32" cy="27" r="18.5" fill="#7f1d1d" fill-opacity=".28" stroke="#fecaca" stroke-opacity=".7"/>
+  <path
+    d="M19 26.2c0-6.2 4.9-10.7 11.5-10.7h4.2c6.9 0 11.8 4.5 11.8 10.8v8.2h-4.7v-6.1h-3.2v12.1h-4.8v-8.8h-6v8.8H23V29h-2.6v5.1c0 3.1 2.1 5.2 5.1 5.2v4.4c-5.8 0-10-3.9-10-9.7v-7.8H19Z"
+    fill="#fff"
+  />
+  <path d="M31.3 19.2c-4.2.3-7.4 3.3-7.7 7.2 2.8-.2 5.8-1.8 7.7-4.1v-3.1Z" fill="#fecaca"/>
+  <circle cx="38.7" cy="23.3" r="1.35" fill="#7f1d1d"/>
+  <path d="M43.3 28.4c2.4.1 4.1 1.6 4.7 3.9-2.3-.2-4.1-1.5-4.7-3.9Z" fill="#fff"/>
+</svg>

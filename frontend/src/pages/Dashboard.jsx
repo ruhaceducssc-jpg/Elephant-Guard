@@ -6,7 +6,7 @@ import {
   CheckCircle, Shield, Zap, Search, Info
 } from 'lucide-react';
 import StatCard from '../components/dashboard/StatCard';
-import api from '../services/api';
+import api, { unwrapApiData } from '../services/api';
 import { toast } from 'react-hot-toast';
 import { io } from 'socket.io-client';
 import { format, isValid } from 'date-fns';
@@ -30,9 +30,19 @@ const Dashboard = () => {
         api.get('/deliveries')
       ]);
       
-      const detectionsData = Array.isArray(detRes.data) ? detRes.data : [];
-      const usersData = Array.isArray(usersRes.data) ? usersRes.data : [];
-      const deliveryData = deliveryRes.data?.success && Array.isArray(deliveryRes.data.events) ? deliveryRes.data.events : [];
+      const detectionsPayload = unwrapApiData(detRes);
+      const usersPayload = unwrapApiData(usersRes);
+      const deliveryPayload = unwrapApiData(deliveryRes);
+
+      const detectionsData = Array.isArray(detectionsPayload)
+        ? detectionsPayload
+        : (Array.isArray(detectionsPayload?.detections) ? detectionsPayload.detections : []);
+      const usersData = Array.isArray(usersPayload)
+        ? usersPayload
+        : (Array.isArray(usersPayload?.residents) ? usersPayload.residents : []);
+      const deliveryData = deliveryPayload?.success && Array.isArray(deliveryPayload.events)
+        ? deliveryPayload.events
+        : [];
 
       setDetections(detectionsData.slice(0, 10));
       

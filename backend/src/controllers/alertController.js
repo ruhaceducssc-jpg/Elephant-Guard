@@ -8,6 +8,7 @@ const {
 } = require('../services/notificationService');
 const { normalizeDetection, isPointInPolygon } = require('../utils/alertUtils');
 const { manualClearDetection } = require('../services/detectionStatusService');
+const { generateDetectionExport } = require('../services/detectionExportService');
 
 // @desc    Create elephant detection and alert
 // @route   POST /api/detections
@@ -142,6 +143,31 @@ exports.getAlerts = async (req, res) => {
     res.json(detections.map(d => normalizeDetection(d)));
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Export detections and linked resident outcomes
+// @route   GET /api/detections/export
+// @access  Private
+exports.exportDetections = async (req, res) => {
+  try {
+    const exportFile = await generateDetectionExport({
+      guardId: req.guard._id,
+      query: req.query,
+    });
+
+    res.setHeader('Content-Type', exportFile.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${exportFile.filename}"`);
+    res.setHeader('Content-Length', exportFile.buffer.length);
+    return res.send(exportFile.buffer);
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500
+        ? 'Failed to export detection data. Please try again.'
+        : error.message,
+    });
   }
 };
 

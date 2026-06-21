@@ -5,10 +5,8 @@ frontend/node_modules/
 
 # Environment variables (Secrets)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 backend/.env
 frontend/.env
 
@@ -46,3 +44,9 @@ Thumbs.db
 # Misc
 coverage/
 .next/
+
+# Local diagnostic scripts that may contain test credentials or private data
+/check_guards.js
+/backend/check_guards.js
+/backend/create_test_guard.js
+/backend/test_sync.js

@@ -10,6 +10,7 @@ const {
   getDetectionResidents,
   resendNotification,
   testNotification,
+  exportDetections,
 } = require('../controllers/alertController');
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -20,6 +21,7 @@ router.route('/')
 
 router.post('/notifications/test', protect, testNotification);
 router.post('/notifications/:deliveryId/resend', protect, resendNotification);
+router.get('/export', protect, exportDetections);
 
 // Detection Specifics
 router.get('/:id/residents', protect, getDetectionResidents);

@@ -11,6 +11,16 @@ import { format, isValid } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import { io } from 'socket.io-client';
 
+const getResidentMapId = (delivery) => {
+  const resident = delivery?.resident || delivery?.residentId;
+
+  if (typeof resident === 'string') return resident;
+
+  return resident?._id?.toString()
+    || delivery?.residentSnapshot?._id?.toString()
+    || null;
+};
+
 const DetectionHistory = () => {
   const [detections, setDetections] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -21,6 +31,17 @@ const DetectionHistory = () => {
   const [notificationSummary, setNotificationSummary] = useState({ linkedResidents: 0, sentSuccessfully: 0, helpRequests: 0 });
   const [safetyOutcome, setSafetyOutcome] = useState({ protected: 0, pending: 0, attackedOrCannotProtect: 0, requiredHelp: 0 });
   const [isResidentsLoading, setIsResidentsLoading] = useState(false);
+  const [selectedDetectionIds, setSelectedDetectionIds] = useState([]);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportFormat, setExportFormat] = useState('xlsx');
+  const [exportScope, setExportScope] = useState('all');
+  const [exportFilters, setExportFilters] = useState({
+    startDate: '',
+    endDate: '',
+    location: ''
+  });
+  const [exportErrors, setExportErrors] = useState({});
+  const [isExporting, setIsExporting] = useState(false);
   
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -182,11 +203,13 @@ const DetectionHistory = () => {
   };
 
   const handleViewOnMap = (residentDelivery) => {
-    const resident = residentDelivery.residentId;
-    if (!resident || (!resident.areaLocation?.coordinates && !resident.latitude)) {
-       return toast.error('Resident location is not configured');
+    const residentId = getResidentMapId(residentDelivery);
+
+    if (!residentId) {
+      return toast.error('Resident location is not available');
     }
-    navigate(`/dashboard/map?residentId=${resident._id}&detectionId=${selectedDetection.id}`);
+
+    navigate(`/dashboard/map?residentId=${residentId}&detectionId=${selectedDetection.id}`);
   };
 
   const handleDelete = async (id) => {
@@ -194,6 +217,7 @@ const DetectionHistory = () => {
       try {
         await api.delete(`/detections/${id}`);
         toast.success('Detection removed');
+        setSelectedDetectionIds(prev => prev.filter(detectionId => detectionId !== id));
         fetchDetections();
         if (selectedDetection?.id === id) setSelectedDetection(null);
       } catch (error) {
@@ -227,6 +251,115 @@ const DetectionHistory = () => {
     return `${(meters / 1000).toFixed(2)} km`;
   };
 
+  const toggleDetectionSelection = (detectionId) => {
+    setSelectedDetectionIds(prev => (
+      prev.includes(detectionId)
+        ? prev.filter(id => id !== detectionId)
+        : [...prev, detectionId]
+    ));
+  };
+
+  const selectAllVisibleDetections = () => {
+    setSelectedDetectionIds(prev => Array.from(new Set([
+      ...prev,
+      ...detections.map(detection => detection.id)
+    ])));
+  };
+
+  const validateExport = () => {
+    const errors = {};
+
+    if (exportScope === 'selected' && selectedDetectionIds.length === 0) {
+      errors.scope = 'Select at least one detection record.';
+    }
+
+    if (exportScope === 'current' && !selectedDetection?.id) {
+      errors.scope = 'Open a detection record before using this range.';
+    }
+
+    if (exportScope === 'dateRange') {
+      if (!exportFilters.startDate) errors.startDate = 'Start date is required.';
+      if (!exportFilters.endDate) errors.endDate = 'End date is required.';
+      if (
+        exportFilters.startDate
+        && exportFilters.endDate
+        && exportFilters.startDate > exportFilters.endDate
+      ) {
+        errors.endDate = 'End date cannot be before start date.';
+      }
+    }
+
+    setExportErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const getExportErrorMessage = async (error) => {
+    const responseData = error.response?.data;
+    if (responseData instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await responseData.text());
+        return parsed.message;
+      } catch {
+        return null;
+      }
+    }
+
+    return responseData?.message;
+  };
+
+  const handleExport = async () => {
+    if (isExporting || !validateExport()) return;
+
+    const params = {
+      scope: exportScope,
+      format: exportFormat
+    };
+
+    if (exportScope === 'selected') {
+      params.detectionIds = selectedDetectionIds.join(',');
+    } else if (exportScope === 'filtered') {
+      params.status = statusFilter;
+      params.search = searchTerm.trim();
+    } else if (exportScope === 'current') {
+      params.currentDetectionId = selectedDetection.id;
+    } else if (exportScope === 'dateRange') {
+      params.startDate = exportFilters.startDate;
+      params.endDate = exportFilters.endDate;
+      params.location = exportFilters.location.trim();
+    }
+
+    setIsExporting(true);
+    try {
+      const response = await api.get('/detections/export', {
+        params,
+        responseType: 'blob'
+      });
+
+      const disposition = response.headers['content-disposition'] || '';
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+      const fallbackDate = new Date().toISOString().slice(0, 10);
+      const filename = filenameMatch?.[1]
+        || `lankabeacon-detections-${fallbackDate}.${exportFormat}`;
+      const downloadUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      toast.success('Detection data exported successfully.');
+      setShowExportDialog(false);
+    } catch (error) {
+      const message = await getExportErrorMessage(error);
+      toast.error(message || 'Failed to export detection data. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-[22px] pb-12 page-fade-in max-w-[1920px] mx-auto">
       {/* Header */}
@@ -238,7 +371,13 @@ const DetectionHistory = () => {
           <p className="text-[#64748b] text-[11px] font-[700] mt-1.5 uppercase tracking-widest">Review elephant detections, linked alerts and resident safety outcomes.</p>
         </div>
         <div className="flex items-center gap-3">
-           <button className="h-11 px-6 bg-white border border-[#dfe7f1] text-[#334155] rounded-[5px] font-[700] text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-[#f8fafc] transition-all shadow-sm">
+           <button
+             onClick={() => {
+               setExportErrors({});
+               setShowExportDialog(true);
+             }}
+             className="h-11 px-6 bg-white border border-[#dfe7f1] text-[#334155] rounded-[5px] font-[700] text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-[#f8fafc] transition-all shadow-sm"
+           >
               <Download size={16} />
               Export Detection Data
            </button>
@@ -272,9 +411,33 @@ const DetectionHistory = () => {
                    >
                      {status}
                    </button>
-                 ))}
-              </div>
-           </div>
+                  ))}
+               </div>
+               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                  <span className="text-[10px] font-[800] text-[#64748b] uppercase tracking-widest">
+                     {selectedDetectionIds.length} selected
+                  </span>
+                  <div className="flex items-center gap-2">
+                     <button
+                       type="button"
+                       onClick={selectAllVisibleDetections}
+                       disabled={detections.length === 0}
+                       className="text-[9px] font-[800] text-[#1768d1] uppercase tracking-widest hover:text-[#0f56b3] disabled:text-[#cbd5e1] disabled:cursor-not-allowed"
+                     >
+                       Select all visible
+                     </button>
+                     <span className="text-[#cbd5e1]">·</span>
+                     <button
+                       type="button"
+                       onClick={() => setSelectedDetectionIds([])}
+                       disabled={selectedDetectionIds.length === 0}
+                       className="text-[9px] font-[800] text-[#64748b] uppercase tracking-widest hover:text-[#0f172a] disabled:text-[#cbd5e1] disabled:cursor-not-allowed"
+                     >
+                       Clear selection
+                     </button>
+                  </div>
+               </div>
+            </div>
 
            <div className="space-y-[10px] max-h-[calc(100vh-320px)] overflow-y-auto custom-scrollbar pr-1">
               {isLoading ? (
@@ -296,8 +459,16 @@ const DetectionHistory = () => {
                         : 'border-[#dfe7f1] bg-white hover:border-[#1768d1]/30 hover:bg-[#f8fafc]'
                     }`}
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                       <div className="w-16 h-16 bg-[#f1f5f9] rounded-[5px] overflow-hidden border border-[#dfe7f1] shrink-0 shadow-sm relative">
+                     <div className="flex items-center gap-4 min-w-0">
+                       <input
+                         type="checkbox"
+                         checked={selectedDetectionIds.includes(det.id)}
+                         onChange={() => toggleDetectionSelection(det.id)}
+                         onClick={(event) => event.stopPropagation()}
+                         aria-label={`Select detection ${det.locationName}`}
+                         className="w-4 h-4 shrink-0 accent-[#1768d1] cursor-pointer"
+                       />
+                        <div className="w-16 h-16 bg-[#f1f5f9] rounded-[5px] overflow-hidden border border-[#dfe7f1] shrink-0 shadow-sm relative">
                           <img 
                             src={det.image ? (det.image.startsWith('http') ? det.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${det.image}`) : '/assets/images/elephant-fallback.jpg'} 
                             className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110" 
@@ -485,6 +656,7 @@ const DetectionHistory = () => {
                         <div className="space-y-4">
                            {residents.map(delivery => {
                              const effectiveStatus = delivery.guardAssessment?.status || 'pending';
+                             const residentMapId = getResidentMapId(delivery);
 
                              return (
                              <div key={delivery._id} className="p-6 border border-[#dfe7f1] bg-white rounded-[5px] hover:border-[#1768d1]/30 transition-all shadow-sm">
@@ -579,7 +751,9 @@ const DetectionHistory = () => {
                                          </button>
                                          <button 
                                             onClick={() => handleViewOnMap(delivery)}
-                                            className="h-[42px] bg-white border border-[#dfe7f1] rounded-[5px] text-[#1768d1] font-[800] text-[10px] uppercase tracking-widest hover:bg-[#eaf2ff] hover:border-[#1768d1]/30 transition-all"
+                                            disabled={!residentMapId}
+                                            title={residentMapId ? 'View resident on Live Map' : 'Resident location is not available'}
+                                            className="h-[42px] bg-white border border-[#dfe7f1] rounded-[5px] text-[#1768d1] font-[800] text-[10px] uppercase tracking-widest hover:bg-[#eaf2ff] hover:border-[#1768d1]/30 transition-all disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white disabled:hover:border-[#dfe7f1]"
                                          >
                                             View on Map
                                          </button>
@@ -615,9 +789,184 @@ const DetectionHistory = () => {
                 </div>
              </div>
            )}
-        </div>
-      </div>
-    </div>
+         </div>
+       </div>
+
+       {showExportDialog && (
+         <div className="fixed inset-0 z-[2500] flex items-center justify-center p-4">
+           <button
+             type="button"
+             aria-label="Close export dialog"
+             className="absolute inset-0 bg-[#0f172a]/65 backdrop-blur-sm"
+             onClick={() => {
+               if (!isExporting) setShowExportDialog(false);
+             }}
+           />
+           <div className="relative w-full max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto custom-scrollbar bg-white rounded-[6px] border border-[#dfe7f1] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+             <div className="sticky top-0 z-10 px-5 sm:px-7 py-5 bg-[#f8fafc] border-b border-[#dfe7f1] flex items-start justify-between gap-4">
+               <div>
+                 <h2 className="text-[17px] font-[800] text-[#0f172a] uppercase tracking-wider">Export Detection Data</h2>
+                 <p className="text-[11px] font-[600] text-[#64748b] mt-1">Generate a guard-scoped report without detection images.</p>
+               </div>
+               <button
+                 type="button"
+                 onClick={() => setShowExportDialog(false)}
+                 disabled={isExporting}
+                 className="w-9 h-9 shrink-0 flex items-center justify-center rounded-[5px] border border-[#dfe7f1] text-[#64748b] hover:bg-white hover:text-[#0f172a] disabled:opacity-50"
+               >
+                 <XCircle size={18} />
+               </button>
+             </div>
+
+             <div className="p-5 sm:p-7 space-y-7">
+               <section className="space-y-3">
+                 <h3 className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em]">Format</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                   {[
+                     { value: 'xlsx', label: 'Excel (.xlsx)', description: 'Two worksheets: detections and resident outcomes' },
+                     { value: 'csv', label: 'CSV (.csv)', description: 'Flattened rows for each detection-resident relationship' }
+                   ].map(option => (
+                     <label
+                       key={option.value}
+                       className={`p-4 rounded-[5px] border cursor-pointer transition-all ${
+                         exportFormat === option.value
+                           ? 'border-[#1768d1] bg-[#eaf2ff]/50'
+                           : 'border-[#dfe7f1] hover:border-[#1768d1]/30'
+                       }`}
+                     >
+                       <div className="flex items-start gap-3">
+                         <input
+                           type="radio"
+                           name="export-format"
+                           value={option.value}
+                           checked={exportFormat === option.value}
+                           onChange={(event) => setExportFormat(event.target.value)}
+                           className="mt-1 accent-[#1768d1]"
+                         />
+                         <div>
+                           <p className="text-[12px] font-[800] text-[#0f172a] uppercase tracking-wider">{option.label}</p>
+                           <p className="text-[10.5px] text-[#64748b] mt-1 leading-relaxed">{option.description}</p>
+                         </div>
+                       </div>
+                     </label>
+                   ))}
+                 </div>
+               </section>
+
+               <section className="space-y-3">
+                 <div className="flex items-center justify-between gap-4">
+                   <h3 className="text-[10px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em]">Export Range</h3>
+                   <span className="text-[9px] font-[800] text-[#1768d1] uppercase tracking-widest">
+                     {selectedDetectionIds.length} selected
+                   </span>
+                 </div>
+                 <div className="space-y-2">
+                   {[
+                     { value: 'all', label: 'All detections', description: 'Every detection belonging to your guard account' },
+                     { value: 'selected', label: 'Selected detections', description: `${selectedDetectionIds.length} checkbox selection${selectedDetectionIds.length === 1 ? '' : 's'}`, disabled: selectedDetectionIds.length === 0 },
+                     { value: 'filtered', label: 'Currently filtered results', description: `Status: ${statusFilter}${searchTerm.trim() ? ` · Search: ${searchTerm.trim()}` : ''}` },
+                     { value: 'current', label: 'Current detection only', description: selectedDetection ? selectedDetection.locationName : 'No detection is currently open', disabled: !selectedDetection },
+                     { value: 'dateRange', label: 'Custom date range', description: 'Choose inclusive dates and optionally filter by location' }
+                   ].map(option => (
+                     <label
+                       key={option.value}
+                       className={`flex items-start gap-3 p-3.5 rounded-[5px] border transition-all ${
+                         option.disabled
+                           ? 'border-[#edf1f6] bg-[#f8fafc] opacity-55 cursor-not-allowed'
+                           : exportScope === option.value
+                             ? 'border-[#1768d1] bg-[#eaf2ff]/40 cursor-pointer'
+                             : 'border-[#dfe7f1] hover:border-[#1768d1]/30 cursor-pointer'
+                       }`}
+                     >
+                       <input
+                         type="radio"
+                         name="export-scope"
+                         value={option.value}
+                         checked={exportScope === option.value}
+                         onChange={(event) => {
+                           setExportScope(event.target.value);
+                           setExportErrors({});
+                         }}
+                         disabled={option.disabled}
+                         className="mt-1 accent-[#1768d1]"
+                       />
+                       <div>
+                         <p className="text-[11px] font-[800] text-[#0f172a] uppercase tracking-wider">{option.label}</p>
+                         <p className="text-[10.5px] text-[#64748b] mt-1">{option.description}</p>
+                       </div>
+                     </label>
+                   ))}
+                 </div>
+                 {exportErrors.scope && (
+                   <p className="text-[11px] font-[700] text-[#e02424]">{exportErrors.scope}</p>
+                 )}
+               </section>
+
+               {exportScope === 'dateRange' && (
+                 <section className="p-4 sm:p-5 bg-[#f8fafc] border border-[#dfe7f1] rounded-[5px] space-y-4">
+                   <h3 className="text-[10px] font-[800] text-[#334155] uppercase tracking-[0.2em]">Custom Filters</h3>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                     <div>
+                       <label className="text-[10px] font-[800] text-[#64748b] uppercase tracking-widest block mb-2">Start Date</label>
+                       <input
+                         type="date"
+                         value={exportFilters.startDate}
+                         onChange={(event) => setExportFilters(prev => ({ ...prev, startDate: event.target.value }))}
+                         className="h-11 px-3 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] outline-none focus:border-[#1768d1]"
+                       />
+                       {exportErrors.startDate && <p className="text-[10px] font-[700] text-[#e02424] mt-1.5">{exportErrors.startDate}</p>}
+                     </div>
+                     <div>
+                       <label className="text-[10px] font-[800] text-[#64748b] uppercase tracking-widest block mb-2">End Date</label>
+                       <input
+                         type="date"
+                         value={exportFilters.endDate}
+                         onChange={(event) => setExportFilters(prev => ({ ...prev, endDate: event.target.value }))}
+                         className="h-11 px-3 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] outline-none focus:border-[#1768d1]"
+                       />
+                       {exportErrors.endDate && <p className="text-[10px] font-[700] text-[#e02424] mt-1.5">{exportErrors.endDate}</p>}
+                     </div>
+                   </div>
+                   <div>
+                     <label className="text-[10px] font-[800] text-[#64748b] uppercase tracking-widest block mb-2">Location / Area (optional)</label>
+                     <div className="relative">
+                       <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
+                       <input
+                         type="text"
+                         value={exportFilters.location}
+                         onChange={(event) => setExportFilters(prev => ({ ...prev, location: event.target.value }))}
+                         placeholder="Example: Matara"
+                         className="h-11 pl-10 pr-3 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] outline-none focus:border-[#1768d1]"
+                       />
+                     </div>
+                   </div>
+                 </section>
+               )}
+             </div>
+
+             <div className="sticky bottom-0 px-5 sm:px-7 py-4 bg-white border-t border-[#dfe7f1] flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+               <button
+                 type="button"
+                 onClick={() => setShowExportDialog(false)}
+                 disabled={isExporting}
+                 className="h-11 px-6 rounded-[5px] border border-[#dfe7f1] text-[#64748b] font-[800] text-[11px] uppercase tracking-widest hover:bg-[#f8fafc] disabled:opacity-50"
+               >
+                 Cancel
+               </button>
+               <button
+                 type="button"
+                 onClick={handleExport}
+                 disabled={isExporting}
+                 className="h-11 px-7 rounded-[5px] bg-[#1768d1] text-white font-[800] text-[11px] uppercase tracking-widest hover:bg-[#0f56b3] disabled:cursor-not-allowed disabled:opacity-70 flex items-center justify-center gap-2"
+               >
+                 {isExporting ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
+                 {isExporting ? 'Exporting...' : 'Export Data'}
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+     </div>
   );
 };
 

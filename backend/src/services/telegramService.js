@@ -4,6 +4,7 @@ const Guard = require('../models/Guard');
 const NotificationDelivery = require('../models/NotificationDelivery');
 const Detection = require('../models/Detection');
 const { evaluateAndClearDetection, reopenDetection } = require('./detectionStatusService');
+const { createResidentReplyNotification } = require('./guardNotificationService');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const isEnabled = process.env.TELEGRAM_ENABLED === 'true';
@@ -94,7 +95,14 @@ const init = (socketIo) => {
             }
 
             // Validate Telegram Chat ID
-            if (delivery.telegramChatId !== chatId) {
+            const resident = delivery.residentId;
+            const residentId = resident?._id || null;
+            const registeredTelegramChatId = resident?.telegramChatId?.toString();
+
+            if (
+              delivery.telegramChatId?.toString() !== chatId
+              || (registeredTelegramChatId && registeredTelegramChatId !== chatId)
+            ) {
               console.warn(`Unauthorized Telegram response attempt for delivery ${deliveryId} by chat ${chatId}`);
               return bot.answerCallbackQuery(callbackQuery.id, { text: "⚠️ Unauthorized action." });
             }
@@ -119,10 +127,12 @@ const init = (socketIo) => {
                 return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ Invalid action." });
             }
 
+            const respondedAt = new Date();
+
             // Update delivery record
             delivery.residentResponse = {
               status: residentStatus,
-              respondedAt: new Date(),
+              respondedAt,
               telegramUserId: from.id.toString(),
               telegramChatId: chatId
             };
@@ -140,16 +150,25 @@ const init = (socketIo) => {
             let reopenResult = null;
 
             const detection = await Detection.findById(delivery.detectionId);
+            const { notification, unreadCount } = await createResidentReplyNotification({
+              delivery,
+              resident,
+              detection,
+              residentStatus,
+              repliedAt: respondedAt,
+              io,
+            });
+
             if (detection) {
               if (detection.status === 'cleared' && residentStatus !== 'protected') {
                 reopenResult = await reopenDetection(detection._id, `Resident responded as ${residentStatus.replace(/_/g, ' ')} via Telegram.`, {
                   source: 'resident_response',
-                  residentId: delivery.residentId._id,
+                  residentId,
                   deliveryId: delivery._id
                 });
               } else if (detection.status === 'active' && residentStatus === 'protected') {
                 clearResult = await evaluateAndClearDetection(delivery.detectionId, {
-                  residentId: delivery.residentId._id,
+                  residentId,
                   deliveryId: delivery._id
                 });
               }
@@ -171,10 +190,12 @@ const init = (socketIo) => {
                 deliveryId: delivery._id,
                 detectionId: delivery.detectionId,
                 alertId: delivery.alertId,
-                residentId: delivery.residentId._id,
+                residentId,
                 residentResponse: delivery.residentResponse,
                 guardAssessment: delivery.guardAssessment,
-                effectiveSafetyStatus: getEffectiveSafetyStatus(delivery)
+                effectiveSafetyStatus: getEffectiveSafetyStatus(delivery),
+                guardNotificationId: notification._id,
+                unreadNotificationCount: unreadCount
               };
 
               // Emit to the specific guard room
@@ -217,11 +238,6 @@ const init = (socketIo) => {
     }
   }
 };
-
-// Initial call if bot was already partially initialized by file load
-if (token && isEnabled) {
-  init();
-}
 
 const escapeHTML = (str) => {
   if (!str) return '';

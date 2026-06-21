@@ -12,6 +12,8 @@ import {
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { io } from 'socket.io-client';
+import elephantMarkerUrl from '../../design-reference/elephant.png';
+import homeMarkerUrl from '../../design-reference/home.png';
 
 // Fix for default marker icons
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -63,12 +65,16 @@ const normalizeResident = (record) => {
   const longitude = Number(coordinates?.[0] ?? resident.longitude ?? resident.lng);
   const latitude = Number(coordinates?.[1] ?? resident.latitude ?? resident.lat);
 
-  const geofenceRadiusMeters = Number(
+  const savedGeofenceRadius = Number(
     resident.geofenceRadiusMeters ?? 
     resident.geofenceRadius ?? 
     resident.radiusMeters ?? 
     resident.radius
   );
+  const geofenceRadiusMeters =
+    Number.isFinite(savedGeofenceRadius) && savedGeofenceRadius > 0
+      ? savedGeofenceRadius
+      : 1000;
 
   return {
     ...resident,
@@ -104,7 +110,10 @@ const MapEvents = ({ onClick }) => {
 const ChangeView = ({ center, zoom }) => {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, zoom);
+    map.flyTo(center, zoom, {
+      animate: true,
+      duration: 1.2,
+    });
   }, [center, zoom, map]);
   return null;
 };
@@ -155,40 +164,31 @@ const LiveMap = () => {
   const getElephantIcon = (isHighlighted) => L.divIcon({
     className: 'elephant-detection-marker-wrapper',
     html: `
-      <div class="elephant-detection-marker ${isHighlighted ? 'lb-elephant-marker--highlighted' : ''}">
+      <div class="elephant-detection-marker ${isHighlighted ? 'lb-selected-elephant-marker' : ''}">
         <img
-          src="/map-icons/detedted.png"
-          alt=""
-          aria-hidden="true"
-          style="width: 42px; height: 42px; object-fit: contain;"
+          src="${elephantMarkerUrl}"
+          alt="Elephant detection"
+          style="width: 46px; height: 46px; object-fit: contain;"
         />
       </div>`,
-    iconSize: [42, 42],
-    iconAnchor: [21, 21],
-    popupAnchor: [0, -24]
+    iconSize: [46, 46],
+    iconAnchor: [23, 43],
+    popupAnchor: [0, -40]
   });
 
-  // Blue House Marker Icon
-  const houseIcon = L.divIcon({
-    className: 'lb-house-marker-wrapper',
+  const getResidentHomeIcon = (isSelected) => L.divIcon({
+    className: 'resident-home-marker-wrapper',
     html: `
-      <div style="
-        width: 36px; 
-        height: 36px; 
-        background: #1768d1; 
-        border-radius: 5px; 
-        border: 2px solid white; 
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 0.2s;
-      " class="hover:scale-110">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <div class="lb-resident-home-marker ${isSelected ? 'lb-resident-home-marker--selected' : ''}">
+        <img
+          src="${homeMarkerUrl}"
+          alt="Resident home"
+          style="width: 40px; height: 40px; object-fit: contain;"
+        />
       </div>`,
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
-    popupAnchor: [0, -18]
+    iconSize: [40, 40],
+    iconAnchor: [20, 37],
+    popupAnchor: [0, -34]
   });
 
   const getPatrolAreaPath = () => {
@@ -210,11 +210,6 @@ const LiveMap = () => {
       setMapCenter([normalized.latitude, normalized.longitude]);
       setZoom(16);
     }
-
-    // Clear highlight after 2.5 seconds
-    setTimeout(() => {
-      setHighlightedDetectionId(null);
-    }, 2500);
   }, []);
 
   const handleResidentSelect = useCallback((res) => {
@@ -223,6 +218,7 @@ const LiveMap = () => {
 
     setSelectedResidentId(normalized._id);
     setSelectedDetectionId(null);
+    setHighlightedDetectionId(null);
     
     if (isValidLocation(normalized.latitude, normalized.longitude)) {
       setMapCenter([normalized.latitude, normalized.longitude]);
@@ -248,20 +244,61 @@ const LiveMap = () => {
         .map(normalizeResident)
         .filter(r => r && isValidLocation(r.latitude, r.longitude));
       
-      setDetections(normalizedDetections);
-      setResidents(normalizedResidents);
+      let finalDetections = normalizedDetections;
+      let finalResidents = normalizedResidents;
+
+      setDetections(finalDetections);
+      setResidents(finalResidents);
       
       // Focus Logic: URL Params
       const focusDetectionId = alertId || queryDetectionId;
       
       if (queryResidentId) {
-        const targetRes = normalizedResidents.find(r => r._id === queryResidentId);
+        let targetRes = finalResidents.find(r => String(r._id) === String(queryResidentId));
+
+        if (!targetRes) {
+          try {
+            const { data } = await api.get(`/users/${queryResidentId}`);
+            const specificResident = normalizeResident(data);
+
+            if (specificResident && isValidLocation(specificResident.latitude, specificResident.longitude)) {
+              finalResidents = [specificResident, ...finalResidents];
+              targetRes = specificResident;
+            }
+          } catch (error) {
+            console.error('Failed to fetch specific resident:', error);
+          }
+        }
+
+        if (
+          focusDetectionId
+          && !finalDetections.some(d => String(d.id) === String(focusDetectionId))
+        ) {
+          try {
+            const { data } = await api.get(`/detections/${focusDetectionId}`);
+            const relatedDetection = normalizeDetection(data);
+
+            if (relatedDetection && isValidLocation(relatedDetection.latitude, relatedDetection.longitude)) {
+              finalDetections = [relatedDetection, ...finalDetections];
+            }
+          } catch (error) {
+            console.error('Failed to fetch related detection:', error);
+          }
+        }
+
+        setDetections(finalDetections);
+        setResidents(finalResidents);
+
         if (targetRes) {
           handleResidentSelect(targetRes);
+        } else {
+          toast.error('Resident location is not available');
         }
       } else if (focusDetectionId) {
-        const targetDet = normalizedDetections.find(d => d.id === focusDetectionId);
+        const targetDet = finalDetections.find(d => String(d.id) === String(focusDetectionId));
         if (targetDet) {
+          setDetections(finalDetections);
+          setResidents(finalResidents);
           handleDetectionSelect(targetDet);
         } else {
           // If not in list, fetch specifically
@@ -269,18 +306,25 @@ const LiveMap = () => {
             const { data } = await api.get(`/detections/${focusDetectionId}`);
             const specificDet = normalizeDetection(data);
             if (specificDet && isValidLocation(specificDet.latitude, specificDet.longitude)) {
-              setDetections(prev => [specificDet, ...prev]);
+              finalDetections = [specificDet, ...finalDetections];
+              setDetections(finalDetections);
+              setResidents(finalResidents);
               handleDetectionSelect(specificDet);
             }
           } catch (e) {
             console.error('Failed to fetch specific detection:', e);
           }
         }
-      } else if (normalizedDetections.length > 0) {
+      } else if (finalDetections.length > 0) {
+        setDetections(finalDetections);
+        setResidents(finalResidents);
         // Default view: Latest detection
-        const latest = normalizedDetections[0];
+        const latest = finalDetections[0];
         setMapCenter([latest.latitude, latest.longitude]);
         setZoom(10);
+      } else {
+        setDetections(finalDetections);
+        setResidents(finalResidents);
       }
     } catch (error) {
       console.error('Map sync error:', error);
@@ -363,6 +407,7 @@ const LiveMap = () => {
   const clearSelection = () => {
     setSelectedResidentId(null);
     setSelectedDetectionId(null);
+    setHighlightedDetectionId(null);
   };
 
   return (
@@ -395,9 +440,12 @@ const LiveMap = () => {
               key={det.id}
               position={[det.latitude, det.longitude]}
               icon={getElephantIcon(highlightedDetectionId === det.id || selectedDetectionId === det.id)}
+              bubblingMouseEvents={false}
               eventHandlers={{
                 click: (e) => {
-                  L.DomEvent.stopPropagation(e);
+                  if (e.originalEvent) {
+                    L.DomEvent.stopPropagation(e.originalEvent);
+                  }
                   handleDetectionSelect(det);
                 },
               }}
@@ -422,10 +470,13 @@ const LiveMap = () => {
             <Marker 
               key={resident._id}
               position={[resident.latitude, resident.longitude]}
-              icon={houseIcon}
+              icon={getResidentHomeIcon(String(selectedResidentId) === String(resident._id))}
+              bubblingMouseEvents={false}
               eventHandlers={{
                 click: (e) => {
-                  L.DomEvent.stopPropagation(e);
+                  if (e.originalEvent) {
+                    L.DomEvent.stopPropagation(e.originalEvent);
+                  }
                   handleResidentSelect(resident);
                 },
               }}
@@ -439,18 +490,46 @@ const LiveMap = () => {
             </Marker>
           ))}
 
-          {selectedResident && (
-            <Circle 
-              center={[selectedResident.latitude, selectedResident.longitude]} 
-              radius={selectedResident.geofenceRadiusMeters || 1000} 
-              pathOptions={{ 
-                color: '#1768d1', 
-                fillColor: '#2878e8', 
-                fillOpacity: 0.14, 
-                opacity: 0.85, 
-                weight: 2 
-              }} 
-            />
+          {selectedResident && Number.isFinite(selectedResident.geofenceRadiusMeters) && selectedResident.geofenceRadiusMeters > 0 && (
+            <>
+              <Circle
+                center={[selectedResident.latitude, selectedResident.longitude]}
+                radius={selectedResident.geofenceRadiusMeters}
+                interactive={false}
+                pathOptions={{
+                  className: 'lb-resident-geofence-circle',
+                  color: '#2563eb',
+                  fillColor: '#3b82f6',
+                  fillOpacity: 0.08,
+                  opacity: 0.85,
+                  weight: 2
+                }}
+              />
+              <Circle
+                center={[selectedResident.latitude, selectedResident.longitude]}
+                radius={selectedResident.geofenceRadiusMeters}
+                interactive={false}
+                pathOptions={{
+                  className: 'lb-resident-radio-wave-circle',
+                  color: '#2563eb',
+                  fillOpacity: 0,
+                  opacity: 0.8,
+                  weight: 3
+                }}
+              />
+              <Circle
+                center={[selectedResident.latitude, selectedResident.longitude]}
+                radius={selectedResident.geofenceRadiusMeters}
+                interactive={false}
+                pathOptions={{
+                  className: 'lb-resident-radio-wave-circle lb-resident-radio-wave-circle--delayed',
+                  color: '#60a5fa',
+                  fillOpacity: 0,
+                  opacity: 0.65,
+                  weight: 2
+                }}
+              />
+            </>
           )}
 
           {patrolAreaPath && (
@@ -480,13 +559,11 @@ const LiveMap = () => {
            <p className="text-[9px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em] border-b border-[#edf1f6] pb-2 mb-2">System Legend</p>
            <div className="space-y-2.5">
               <div className="flex items-center gap-3">
-                 <img src="/map-icons/detedted.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain" />
+                 <img src={elephantMarkerUrl} alt="" aria-hidden="true" className="w-7 h-7 object-contain" />
                  <span className="text-[10px] font-[700] text-[#334155] uppercase tracking-wider">Elephant Detection</span>
               </div>
               <div className="flex items-center gap-3">
-                 <div className="w-6 h-6 rounded-full bg-[#1768d1] border-2 border-white shadow-sm flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                 </div>
+                 <img src={homeMarkerUrl} alt="" aria-hidden="true" className="w-7 h-7 object-contain" />
                  <span className="text-[10px] font-[700] text-[#334155] uppercase tracking-wider">Resident Location</span>
               </div>
               <div className="flex items-center gap-3 pl-0.5">
