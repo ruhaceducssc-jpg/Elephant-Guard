@@ -28,6 +28,11 @@ lerna-debug.log*
 # Uploads and temporary files
 uploads/
 backend/uploads/
+exports/
+backend/exports/
+frontend/exports/
+lankabeacon-detections-*.csv
+lankabeacon-detections-*.xlsx
 .cache/
 backend/nodemon
 backend/npm

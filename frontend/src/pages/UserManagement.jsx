@@ -17,6 +17,11 @@ const MapEvents = ({ onLocationSelect }) => {
   return null;
 };
 
+const formatResidentText = (value) => {
+  const text = value === null || value === undefined ? '' : String(value).trim();
+  return text || 'Not available';
+};
+
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -120,10 +125,12 @@ const UserManagement = () => {
   };
 
   const filteredUsers = Array.isArray(users) ? users.filter(user => {
-    const s = searchTerm.toLowerCase();
-    return String(user.name || '').toLowerCase().includes(s) || 
-           String(user.village || '').toLowerCase().includes(s) || 
-           String(user.phone || '').toLowerCase().includes(s);
+    const s = searchTerm.trim().toLowerCase();
+    return String(user.name || '').toLowerCase().includes(s)
+      || String(user.village || '').toLowerCase().includes(s)
+      || String(user.areaLocation?.areaName || '').toLowerCase().includes(s)
+      || String(user.telegramChatId || '').toLowerCase().includes(s)
+      || String(user.phone || '').toLowerCase().includes(s);
   }) : [];
 
   return (
@@ -150,7 +157,7 @@ const UserManagement = () => {
                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#cbd5e1]" size={18} />
                  <input 
                    type="text" 
-                   placeholder="Search community nodes by name, village or contact..." 
+                   placeholder="Search by name, location, Telegram ID or number..."
                    className="h-11 pl-12 w-full bg-white border border-[#dfe7f1] rounded-[5px] text-[13px] font-[500] focus:border-[#2878e8] outline-none transition-all"
                    value={searchTerm}
                    onChange={(e) => setSearchTerm(e.target.value)}
@@ -182,49 +189,58 @@ const UserManagement = () => {
                        <p className="text-[11px] font-[800] uppercase tracking-widest text-[#64748b]">No active nodes found</p>
                     </div>
                  ) : (
-                    <table className="w-full text-left">
+                    <table className="w-full min-w-[1100px] table-fixed text-left">
+                       <colgroup>
+                          <col className="w-[24%]" />
+                          <col className="w-[23%]" />
+                          <col className="w-[23%]" />
+                          <col className="w-[18%]" />
+                          <col className="w-[12%]" />
+                       </colgroup>
                        <thead>
                           <tr className="bg-[#f8fafc] border-b border-[#dfe7f1]">
                              <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Node Identity</th>
-                             <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Location Matrix</th>
-                             <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest text-center">Status</th>
+                             <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Location</th>
+                             <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Telegram ID</th>
+                             <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest">Number</th>
                              <th className="px-6 py-[18px] text-[10px] font-[800] text-[#94a3b8] uppercase tracking-widest text-right">Action</th>
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-[#edf1f6]">
                           {filteredUsers.map((resident) => (
                              <tr key={resident._id} className="hover:bg-[#f8fafc]/60 transition-colors group">
-                                <td className="px-6 py-5">
+                                <td className="px-6 py-5 align-top">
                                    <div className="flex items-center gap-4">
-                                      <div className="w-11 h-11 rounded-[5px] bg-[#f1f5f9] flex items-center justify-center text-[#94a3b8] group-hover:bg-[#eaf2ff] group-hover:text-[#1768d1] transition-colors border border-[#dfe7f1] shadow-sm">
+                                      <div className="w-11 h-11 shrink-0 rounded-[5px] bg-[#f1f5f9] flex items-center justify-center text-[#94a3b8] group-hover:bg-[#eaf2ff] group-hover:text-[#1768d1] transition-colors border border-[#dfe7f1] shadow-sm">
                                          <User size={20} />
                                       </div>
-                                      <div>
-                                         <p className="font-[700] text-[#0f172a] text-[14px] tracking-tight group-hover:text-[#1768d1] transition-colors leading-none">{resident.name}</p>
-                                         <div className="flex items-center gap-2 mt-2">
-                                            <span className="text-[10px] text-[#64748b] font-[700] uppercase tracking-wider">{resident.phone}</span>
-                                            {resident.telegramChatId && (
-                                              <span className="text-[10px] text-[#1768d1] font-[800] uppercase tracking-widest border-l border-[#edf1f6] pl-2">ID: {resident.telegramChatId}</span>
-                                            )}
-                                         </div>
+                                      <div className="min-w-0">
+                                         <p className="font-[700] text-[#0f172a] text-[14px] tracking-tight group-hover:text-[#1768d1] transition-colors leading-5 break-words">
+                                            {formatResidentText(resident.name)}
+                                         </p>
                                       </div>
                                    </div>
                                 </td>
-                                <td className="px-6 py-5">
-                                   <p className="text-[13px] font-[700] text-[#334155] leading-none">{resident.village}</p>
+                                <td className="px-6 py-5 align-top">
+                                   <p className="text-[13px] font-[700] text-[#334155] leading-5 break-words">{formatResidentText(resident.village)}</p>
                                    <div className="flex items-center gap-2 mt-2 opacity-70">
-                                      <Navigation size={10} className="text-[#64748b]" />
+                                      <Navigation size={10} className="shrink-0 text-[#64748b]" />
                                       <span className="text-[10.5px] font-[600] text-[#64748b] uppercase tracking-wider">
                                          {resident.geofenceRadiusMeters}M Geofence
                                       </span>
                                    </div>
                                 </td>
-                                <td className="px-6 py-5 text-center">
-                                   <span className={`badge mx-auto px-3 py-1 font-[800] text-[10px] tracking-widest ${resident.notificationEnabled ? 'badge-success bg-[#edfcf4] text-[#0e7a42] border-[#b7efcf]' : 'badge-slate bg-[#f1f5f9] text-[#64748b] border-[#dbe4ef]'} rounded-[5px]`}>
-                                      {resident.notificationEnabled ? 'ARMED' : 'MUTED'}
+                                <td className="px-6 py-5 align-top">
+                                   <span className="block text-[12px] leading-5 font-mono font-[700] text-[#1768d1] whitespace-normal break-all">
+                                      {formatResidentText(resident.telegramChatId)}
                                    </span>
                                 </td>
-                                <td className="px-6 py-5 text-right">
+                                <td className="px-6 py-5 align-top">
+                                   <span className="block text-[12px] leading-5 font-mono font-[700] text-[#334155] whitespace-normal break-words">
+                                      {formatResidentText(resident.phone)}
+                                   </span>
+                                </td>
+                                <td className="px-6 py-5 align-top text-right">
                                    <div className="flex items-center justify-end gap-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                       <button 
                                         onClick={() => handleEdit(resident)}

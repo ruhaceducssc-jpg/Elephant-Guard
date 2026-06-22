@@ -468,15 +468,12 @@ const DetectionHistory = () => {
                          aria-label={`Select detection ${det.locationName}`}
                          className="w-4 h-4 shrink-0 accent-[#1768d1] cursor-pointer"
                        />
-                        <div className="w-16 h-16 bg-[#f1f5f9] rounded-[5px] overflow-hidden border border-[#dfe7f1] shrink-0 shadow-sm relative">
+                        <div className="w-16 h-16 bg-[#f1f5f9] rounded-[5px] overflow-hidden border border-[#dfe7f1] shrink-0 shadow-sm">
                           <img 
                             src={det.image ? (det.image.startsWith('http') ? det.image : `${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '')}/uploads/${det.image}`) : '/assets/images/elephant-fallback.jpg'} 
                             className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110" 
                             alt="Detection" 
                           />
-                          <div className="absolute top-1 left-1 px-1 py-0.5 bg-[#0f172a]/80 backdrop-blur-md rounded-[2px] text-[7px] font-[800] text-white uppercase tracking-wider">
-                             {(det.confidence * 100).toFixed(0)}%
-                          </div>
                        </div>
                        <div className="min-w-0">
                           <h3 className={`text-[15px] font-[800] tracking-tight truncate leading-tight ${
@@ -545,14 +542,8 @@ const DetectionHistory = () => {
                               className="w-full h-full object-contain" 
                               alt="Elephant Detection" 
                             />
-                            {/* Overlay badges for confidence and status since cards are removed */}
-                            <div className="absolute top-4 left-4 flex gap-2">
-                               <div className="badge bg-[#0f172a]/80 backdrop-blur-md text-white border-white/10 rounded-[4px] px-3 py-1.5 h-auto font-[800] text-[10px] uppercase tracking-widest">
-                                  {(selectedDetection.confidence * 100).toFixed(1)}% Confidence
-                               </div>
-                               <div className={`badge ${selectedDetection.status === 'active' ? 'bg-[#ef3535]/80' : 'bg-[#18b866]/80'} backdrop-blur-md text-white border-white/10 rounded-[4px] px-3 py-1.5 h-auto font-[800] text-[10px] uppercase tracking-widest`}>
-                                  {selectedDetection.status}
-                               </div>
+                            <div className={`badge absolute top-4 left-4 ${selectedDetection.status === 'active' ? 'bg-[#ef3535]/80' : 'bg-[#18b866]/80'} backdrop-blur-md text-white border-white/10 rounded-[4px] px-3 py-1.5 h-auto font-[800] text-[10px] uppercase tracking-widest`}>
+                               {selectedDetection.status}
                             </div>
                          </div>
                       </div>
