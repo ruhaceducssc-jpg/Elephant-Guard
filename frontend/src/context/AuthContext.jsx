@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
@@ -6,6 +6,29 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const syncUser = useCallback((profileUpdate) => {
+    const savedUser = localStorage.getItem('user');
+    let currentUser = {};
+
+    if (savedUser && savedUser !== 'undefined') {
+      try {
+        currentUser = JSON.parse(savedUser);
+      } catch {
+        currentUser = {};
+      }
+    }
+
+    const nextUser = {
+      ...currentUser,
+      ...profileUpdate,
+      token: profileUpdate?.token || currentUser.token,
+    };
+
+    localStorage.setItem('user', JSON.stringify(nextUser));
+    setUser(nextUser);
+    return nextUser;
+  }, []);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -40,9 +63,7 @@ export const AuthProvider = ({ children }) => {
     if (data.token) {
       localStorage.setItem('token', data.token);
     }
-    localStorage.setItem('user', JSON.stringify(data));
-    setUser(data);
-    return data;
+    return syncUser(data);
   };
 
   const logout = () => {
@@ -55,6 +76,7 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={{ 
       user, login, register, updateProfile, logout, 
+      syncUser,
       isAuthenticated: !!user, loading
     }}>
       {children}

@@ -54,14 +54,14 @@ const notificationDeliverySchema = new mongoose.Schema({
   },
   telegramChatId: {
     type: String,
-    required: true,
+    default: '',
   },
   telegramMessageId: {
     type: String,
   },
   distanceToDetectionMeters: {
     type: Number,
-    required: true,
+    default: null,
   },
   residentSnapshot: {
     name: String,
@@ -84,9 +84,21 @@ const notificationDeliverySchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  insideGuardBoundary: {
+    type: Boolean,
+    default: false,
+  },
   insideResidentGeofence: {
     type: Boolean,
     default: false,
+  },
+  eligibilityStatus: {
+    type: String,
+    default: '',
+  },
+  automaticAttemptedAt: {
+    type: Date,
+    default: null,
   },
   sentAt: {
     type: Date,
@@ -103,7 +115,7 @@ const notificationDeliverySchema = new mongoose.Schema({
 });
 
 notificationDeliverySchema.index({ alertId: 1, residentId: 1 }, { unique: true });
-notificationDeliverySchema.index({ detectionId: 1 });
+notificationDeliverySchema.index({ detectionId: 1, residentId: 1 }, { unique: true });
 notificationDeliverySchema.index({ residentId: 1 });
 
 module.exports = mongoose.model('NotificationDelivery', notificationDeliverySchema);

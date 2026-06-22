@@ -5,8 +5,10 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const path = require('path');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middleware/errorMiddleware');
+const Guard = require('./models/Guard');
 
 // Load env vars
 dotenv.config();
@@ -95,13 +97,30 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Socket.io connection
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('Socket authentication required'));
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const guard = await Guard.findById(decoded.id).select('_id');
+    if (!guard) return next(new Error('Socket guard not found'));
+
+    socket.guardId = guard._id.toString();
+    return next();
+  } catch {
+    return next(new Error('Socket authentication failed'));
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
+  socket.join([socket.guardId, `guard:${socket.guardId}`]);
 
   socket.on('join', (guardId) => {
-    if (guardId) {
-      socket.join(guardId.toString());
-      console.log(`Guard ${guardId} joined room`);
+    if (guardId && String(guardId) === socket.guardId) {
+      socket.join([socket.guardId, `guard:${socket.guardId}`]);
+      console.log(`Guard ${socket.guardId} joined room`);
     }
   });
 

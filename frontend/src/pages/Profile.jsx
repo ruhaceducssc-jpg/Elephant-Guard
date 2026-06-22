@@ -12,7 +12,7 @@ import { format, isValid } from 'date-fns';
 import PatrolAreaSelector from '../components/map/PatrolAreaSelector';
 
 const Profile = () => {
-  const { user, updateProfile, logout } = useAuth();
+  const { updateProfile, syncUser, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('settings');
   const [isLoading, setIsLoading] = useState(false);
   const [isSecurityLoading, setIsSecurityLoading] = useState(false);
@@ -69,15 +69,9 @@ const Profile = () => {
     if (e) e.preventDefault();
     setIsLoading(true);
     try {
-      let data;
-      if (activeTab === 'patrol') {
-        const response = await api.put('/guards/me/patrol-area', { patrolArea: formData.patrolArea });
-        data = { ...fullProfile, patrolArea: response.data.patrolArea };
-        toast.success('Patrol boundary synchronized successfully');
-      } else {
-        data = await updateProfile(formData);
-        toast.success('Profile updated successfully');
-      }
+      const { patrolArea, ...profileFields } = formData;
+      const data = await updateProfile(profileFields);
+      toast.success('Profile updated successfully');
       setFullProfile(data);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Update failed');
@@ -322,23 +316,40 @@ const Profile = () => {
                           <div className="absolute inset-0 rounded-[5px] border border-[#dfe7f1] overflow-hidden shadow-2xl bg-[#f1f5f9] group">
                              <PatrolAreaSelector 
                                initialPolygon={fullProfile?.patrolArea} 
-                               onSave={(newPolygon) => {
-                                 setFormData({ ...formData, patrolArea: newPolygon });
-                                 // Auto sync when area is saved from selector
-                                 const syncBoundary = async () => {
-                                   setIsLoading(true);
-                                   try {
-                                     const response = await api.put('/guards/me/patrol-area', { patrolArea: newPolygon });
-                                     setFullProfile({ ...fullProfile, patrolArea: response.data.patrolArea });
-                                     toast.success('Vector boundary synchronized with network');
-                                   } catch (error) {
-                                     toast.error('Boundary synchronization failed');
-                                   } finally {
-                                      setIsLoading(false);
-                                   }
-                                 };
-                                 syncBoundary();
-                               }} 
+                               onSave={async (newPolygon) => {
+                                 setIsLoading(true);
+                                 try {
+                                   const response = await api.put('/guards/me/patrol-area', {
+                                     patrolArea: newPolygon,
+                                   });
+                                   const savedPatrolArea = response.data.patrolArea;
+                                   const boundaryMetadata = {
+                                     patrolArea: savedPatrolArea,
+                                     patrolAreaUpdatedAt: response.data.updatedAt,
+                                     patrolAreaPointCount: response.data.pointCount,
+                                   };
+
+                                   setFormData((current) => ({
+                                     ...current,
+                                     patrolArea: savedPatrolArea,
+                                   }));
+                                   setFullProfile((current) => ({
+                                     ...current,
+                                     ...boundaryMetadata,
+                                   }));
+                                   syncUser(boundaryMetadata);
+                                   toast.success('Vector boundary synchronized with network');
+                                   return savedPatrolArea;
+                                 } catch (error) {
+                                   toast.error(
+                                     error.response?.data?.message
+                                       || 'Boundary synchronization failed'
+                                   );
+                                   throw error;
+                                 } finally {
+                                   setIsLoading(false);
+                                 }
+                               }}
                              />
                              <div className="absolute top-6 left-6 z-[500] px-4 py-2 bg-[#0f172a]/95 backdrop-blur-sm text-white rounded-[5px] text-[10px] font-[800] uppercase tracking-widest border border-white/10 shadow-2xl flex items-center gap-3">
                                 <div className="w-2 h-2 bg-[#18b866] rounded-full animate-pulse shadow-[0_0_8px_rgba(24,184,102,0.8)]"></div>

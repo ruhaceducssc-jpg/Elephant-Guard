@@ -8,6 +8,8 @@ import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
 
+const DEFAULT_MAP_CENTER = [7.8731, 80.7718];
+
 const MapEvents = ({ onLocationSelect }) => {
   useMapEvents({
     click(e) {
@@ -34,8 +36,8 @@ const UserManagement = () => {
     phone: '',
     telegramChatId: '',
     village: '',
-    latitude: 7.8731,
-    longitude: 80.7718,
+    latitude: null,
+    longitude: null,
     areaName: '',
     geofenceRadiusMeters: 1000,
     notificationEnabled: true
@@ -61,6 +63,12 @@ const UserManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!Number.isFinite(formData.latitude) || !Number.isFinite(formData.longitude)) {
+      toast.error('Select the resident location on the map');
+      return;
+    }
+
     setIsLoading(true);
     try {
       if (isEditing) {
@@ -92,6 +100,7 @@ const UserManagement = () => {
   };
 
   const handleEdit = (user) => {
+    const savedRadius = Number(user.geofenceRadiusMeters);
     setIsEditing(true);
     setCurrentUser(user);
     setFormData({
@@ -99,10 +108,12 @@ const UserManagement = () => {
       phone: user.phone || '',
       telegramChatId: user.telegramChatId || '',
       village: user.village || '',
-      latitude: user.areaLocation?.coordinates?.[1] || 7.8731,
-      longitude: user.areaLocation?.coordinates?.[0] || 80.7718,
+      latitude: Number(user.areaLocation?.coordinates?.[1]),
+      longitude: Number(user.areaLocation?.coordinates?.[0]),
       areaName: user.areaLocation?.areaName || '',
-      geofenceRadiusMeters: user.geofenceRadiusMeters || 1000,
+      geofenceRadiusMeters: Number.isFinite(savedRadius) && savedRadius > 0
+        ? savedRadius
+        : '',
       notificationEnabled: user.notificationEnabled !== undefined ? user.notificationEnabled : true
     });
     setShowModal(true);
@@ -114,8 +125,8 @@ const UserManagement = () => {
       phone: '',
       telegramChatId: '',
       village: '',
-      latitude: 7.8731,
-      longitude: 80.7718,
+      latitude: null,
+      longitude: null,
       areaName: '',
       geofenceRadiusMeters: 1000,
       notificationEnabled: true
@@ -349,11 +360,23 @@ const UserManagement = () => {
                    <h3 className="text-[10.5px] font-[800] text-[#94a3b8] uppercase tracking-[0.2em] border-l-[3px] border-[#1768d1] pl-3">Geospatial Telemetry</h3>
                    <div className="space-y-4">
                       <div className="h-[280px] rounded-[5px] border border-[#dfe7f1] overflow-hidden relative shadow-md bg-[#f1f5f9]">
-                         <MapContainer center={[formData.latitude, formData.longitude]} zoom={13} className="h-full w-full z-0">
+                         <MapContainer
+                           center={
+                             Number.isFinite(formData.latitude) && Number.isFinite(formData.longitude)
+                               ? [formData.latitude, formData.longitude]
+                               : DEFAULT_MAP_CENTER
+                           }
+                           zoom={13}
+                           className="h-full w-full z-0"
+                         >
                             <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
                             <MapEvents onLocationSelect={(lat, lng) => setFormData({ ...formData, latitude: lat, longitude: lng })} />
-                            <Marker position={[formData.latitude, formData.longitude]} />
-                            <Circle center={[formData.latitude, formData.longitude]} radius={formData.geofenceRadiusMeters} pathOptions={{ color: '#1768d1', fillColor: '#1768d1', fillOpacity: 0.1, weight: 2 }} />
+                            {Number.isFinite(formData.latitude) && Number.isFinite(formData.longitude) && (
+                              <>
+                                <Marker position={[formData.latitude, formData.longitude]} />
+                                <Circle center={[formData.latitude, formData.longitude]} radius={formData.geofenceRadiusMeters} pathOptions={{ color: '#1768d1', fillColor: '#1768d1', fillOpacity: 0.1, weight: 2 }} />
+                              </>
+                            )}
                          </MapContainer>
                          <div className="absolute top-4 left-4 z-[500] px-3 py-1.5 bg-[#0f172a]/95 text-white rounded-[5px] text-[9px] font-[800] uppercase tracking-widest border border-white/10 shadow-2xl flex items-center gap-2">
                             <div className="w-1.5 h-1.5 bg-[#18b866] rounded-full animate-pulse shadow-[0_0_5px_rgba(24,184,102,0.8)]"></div>
@@ -363,11 +386,11 @@ const UserManagement = () => {
                       <div className="grid grid-cols-2 gap-4">
                          <div>
                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest mb-2 block">Latitude</label>
-                            <input type="text" className="h-10 px-4 w-full bg-[#f8fafc] border border-[#dfe7f1] rounded-[5px] text-[11px] font-mono font-[700] text-[#475569]" value={formData.latitude.toFixed(6)} readOnly />
+                            <input type="text" className="h-10 px-4 w-full bg-[#f8fafc] border border-[#dfe7f1] rounded-[5px] text-[11px] font-mono font-[700] text-[#475569]" value={Number.isFinite(formData.latitude) ? formData.latitude.toFixed(6) : 'Select on map'} readOnly />
                          </div>
                          <div>
                             <label className="text-[11px] font-[800] text-[#64748b] uppercase tracking-widest mb-2 block">Longitude</label>
-                            <input type="text" className="h-10 px-4 w-full bg-[#f8fafc] border border-[#dfe7f1] rounded-[5px] text-[11px] font-mono font-[700] text-[#475569]" value={formData.longitude.toFixed(6)} readOnly />
+                            <input type="text" className="h-10 px-4 w-full bg-[#f8fafc] border border-[#dfe7f1] rounded-[5px] text-[11px] font-mono font-[700] text-[#475569]" value={Number.isFinite(formData.longitude) ? formData.longitude.toFixed(6) : 'Select on map'} readOnly />
                          </div>
                       </div>
                    </div>

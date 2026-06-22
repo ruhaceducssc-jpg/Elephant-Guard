@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle, Polygon, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -74,7 +74,7 @@ const normalizeResident = (record) => {
   const geofenceRadiusMeters =
     Number.isFinite(savedGeofenceRadius) && savedGeofenceRadius > 0
       ? savedGeofenceRadius
-      : 1000;
+      : null;
 
   return {
     ...resident,
@@ -96,6 +96,40 @@ const isValidLocation = (lat, lng) => {
     lng >= -180 && lng <= 180 &&
     !(lat === 0 && lng === 0)
   );
+};
+
+const normalizePatrolArea = (patrolArea) => {
+  const ring = patrolArea?.type === 'Polygon'
+    ? patrolArea.coordinates?.[0]
+    : null;
+
+  if (!Array.isArray(ring) || ring.length < 4) return null;
+
+  const coordinates = ring.map((coordinate) => {
+    const longitude = Number(coordinate?.[0]);
+    const latitude = Number(coordinate?.[1]);
+    return [longitude, latitude];
+  });
+
+  if (!coordinates.every(([longitude, latitude]) => (
+    Number.isFinite(longitude)
+    && longitude >= -180
+    && longitude <= 180
+    && Number.isFinite(latitude)
+    && latitude >= -90
+    && latitude <= 90
+  ))) {
+    return null;
+  }
+
+  const first = coordinates[0];
+  const last = coordinates[coordinates.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) return null;
+
+  return {
+    type: 'Polygon',
+    coordinates: [coordinates],
+  };
 };
 
 const MapEvents = ({ onClick }) => {
@@ -129,6 +163,21 @@ const ResizeMap = () => {
   return null;
 };
 
+const FitPatrolBoundary = ({ positions }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!Array.isArray(positions) || positions.length < 3) return;
+    map.fitBounds(L.latLngBounds(positions), {
+      padding: [35, 35],
+      maxZoom: 15,
+      animate: true,
+    });
+  }, [map, positions]);
+
+  return null;
+};
+
 const LiveMap = () => {
   const { alertId } = useParams();
   const [searchParams] = useSearchParams();
@@ -136,10 +185,11 @@ const LiveMap = () => {
   const queryDetectionId = searchParams.get('detectionId');
   
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, syncUser } = useAuth();
   
   const [detections, setDetections] = useState([]);
   const [residents, setResidents] = useState([]);
+  const [patrolArea, setPatrolArea] = useState(null);
   const [selectedResidentId, setSelectedResidentId] = useState(null);
   const [selectedDetectionId, setSelectedDetectionId] = useState(null);
   const [highlightedDetectionId, setHighlightedDetectionId] = useState(null);
@@ -191,12 +241,15 @@ const LiveMap = () => {
     popupAnchor: [0, -34]
   });
 
-  const getPatrolAreaPath = () => {
-    if (!user?.patrolArea?.coordinates?.[0]) return null;
-    return user.patrolArea.coordinates[0].map(coord => [coord[1], coord[0]]);
-  };
+  const patrolAreaPath = useMemo(() => {
+    const normalized = normalizePatrolArea(patrolArea);
+    if (!normalized) return null;
 
-  const patrolAreaPath = getPatrolAreaPath();
+    const leafletPoints = normalized.coordinates[0].map(
+      ([longitude, latitude]) => [latitude, longitude]
+    );
+    return leafletPoints.slice(0, -1);
+  }, [patrolArea]);
 
   const handleDetectionSelect = useCallback((det) => {
     const normalized = normalizeDetection(det);
@@ -226,12 +279,33 @@ const LiveMap = () => {
     }
   }, []);
 
+  const fetchBoundary = useCallback(async () => {
+    const { data } = await api.get('/guards/me');
+    const latestPatrolArea = normalizePatrolArea(data.patrolArea);
+    setPatrolArea(latestPatrolArea);
+    syncUser({
+      patrolArea: latestPatrolArea,
+      patrolAreaUpdatedAt: data.patrolAreaUpdatedAt,
+      patrolAreaPointCount: data.patrolAreaPointCount,
+    });
+    return latestPatrolArea;
+  }, [syncUser]);
+
   const fetchMapData = useCallback(async () => {
     try {
-      const [detRes, residentsRes] = await Promise.all([
+      const [detRes, residentsRes, profileRes] = await Promise.all([
         api.get('/detections'),
-        api.get('/users')
+        api.get('/users'),
+        api.get('/guards/me'),
       ]);
+
+      const latestPatrolArea = normalizePatrolArea(profileRes.data?.patrolArea);
+      setPatrolArea(latestPatrolArea);
+      syncUser({
+        patrolArea: latestPatrolArea,
+        patrolAreaUpdatedAt: profileRes.data?.patrolAreaUpdatedAt,
+        patrolAreaPointCount: profileRes.data?.patrolAreaPointCount,
+      });
       
       const rawDetections = Array.isArray(detRes.data) ? detRes.data : [];
       const normalizedDetections = rawDetections
@@ -315,7 +389,7 @@ const LiveMap = () => {
             console.error('Failed to fetch specific detection:', e);
           }
         }
-      } else if (finalDetections.length > 0) {
+      } else if (finalDetections.length > 0 && !latestPatrolArea) {
         setDetections(finalDetections);
         setResidents(finalResidents);
         // Default view: Latest detection
@@ -332,18 +406,23 @@ const LiveMap = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [alertId, queryResidentId, queryDetectionId, handleDetectionSelect, handleResidentSelect]);
+  }, [
+    alertId,
+    queryResidentId,
+    queryDetectionId,
+    handleDetectionSelect,
+    handleResidentSelect,
+    syncUser,
+  ]);
 
   useEffect(() => {
     fetchMapData();
 
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
-    const guardId = userData.id || userData._id;
-
-    if (guardId) {
-      socket.emit('join', guardId);
-    }
+    const token = localStorage.getItem('token');
+    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
+      auth: { token },
+    });
+    const guardId = user?.id || user?._id;
 
     // Listener for new elephant detections
     const handleNewDetection = (payload) => {
@@ -362,25 +441,52 @@ const LiveMap = () => {
       });
     };
 
-    socket.on('new-elephant-detection', handleNewDetection);
-    socket.on('new-detection', (data) => handleNewDetection(data)); // Legacy fallback
-
-    socket.on('detection-status-updated', (updated) => {
+    const handleLegacyDetection = (data) => handleNewDetection(data);
+    const handleDetectionStatusUpdated = (updated) => {
        setDetections(prev => prev.map(d => d.id === (updated.id || updated.detectionId) ? { ...d, ...updated } : d));
-    });
+    };
 
-    socket.on('connect', () => {
+    const handleBoundaryUpdated = (payload) => {
+      if (!guardId || String(payload?.guardId) !== String(guardId)) return;
+      const latestPatrolArea = normalizePatrolArea(payload.patrolArea);
+      setPatrolArea(latestPatrolArea);
+      syncUser({
+        patrolArea: latestPatrolArea,
+        patrolAreaUpdatedAt: payload.updatedAt,
+      });
+    };
+
+    const handleConnect = () => {
       console.log('Map socket connected');
-      // Re-fetch data on reconnect to ensure no missed events
-      fetchMapData();
-    });
+      if (guardId) socket.emit('join', guardId);
+      fetchBoundary().catch((error) => {
+        console.error('Boundary reconnect sync failed:', error);
+      });
+    };
+
+    const handleWindowFocus = () => {
+      fetchBoundary().catch((error) => {
+        console.error('Boundary focus sync failed:', error);
+      });
+    };
+
+    socket.on('new-elephant-detection', handleNewDetection);
+    socket.on('new-detection', handleLegacyDetection);
+    socket.on('detection-status-updated', handleDetectionStatusUpdated);
+    socket.on('patrol-boundary:updated', handleBoundaryUpdated);
+    socket.on('connect', handleConnect);
+    window.addEventListener('focus', handleWindowFocus);
 
     return () => {
-      socket.off('new-elephant-detection');
-      socket.off('new-detection');
+      socket.off('new-elephant-detection', handleNewDetection);
+      socket.off('new-detection', handleLegacyDetection);
+      socket.off('detection-status-updated', handleDetectionStatusUpdated);
+      socket.off('patrol-boundary:updated', handleBoundaryUpdated);
+      socket.off('connect', handleConnect);
+      window.removeEventListener('focus', handleWindowFocus);
       socket.disconnect();
     };
-  }, [fetchMapData]);
+  }, [fetchBoundary, fetchMapData, syncUser, user?._id, user?.id]);
 
   const handleSelfLocation = () => {
     if (!navigator.geolocation) return toast.error('Geolocation restricted');
@@ -423,6 +529,7 @@ const LiveMap = () => {
         >
           <ChangeView center={mapCenter} zoom={zoom} />
           <ResizeMap />
+          {patrolAreaPath && <FitPatrolBoundary positions={patrolAreaPath} />}
           <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
           <ZoomControl position="bottomright" />
           
@@ -535,7 +642,12 @@ const LiveMap = () => {
           {patrolAreaPath && (
             <Polygon 
               positions={patrolAreaPath} 
-              pathOptions={{ color: '#119c55', fillColor: '#119c55', fillOpacity: 0.05, weight: 3, dashArray: '5, 10' }} 
+              pathOptions={{
+                color: '#0b6b3a',
+                fillColor: '#119c55',
+                fillOpacity: 0.12,
+                weight: 3,
+              }}
             />
           )}
         </MapContainer>

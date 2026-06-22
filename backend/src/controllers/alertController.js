@@ -6,7 +6,11 @@ const {
   triggerAlertNotifications, 
   resendNotification 
 } = require('../services/notificationService');
-const { normalizeDetection, isPointInPolygon } = require('../utils/alertUtils');
+const {
+  isValidLatitude,
+  isValidLongitude,
+  normalizeDetection,
+} = require('../utils/alertUtils');
 const { manualClearDetection } = require('../services/detectionStatusService');
 const { generateDetectionExport } = require('../services/detectionExportService');
 
@@ -23,11 +27,11 @@ exports.createAlert = async (req, res) => {
   const conf = parseFloat(confidence) || 0;
   const guardId = req.guard?._id;
 
-  if (isNaN(lat) || isNaN(lng)) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return res.status(400).json({ success: false, message: 'Valid GPS coordinates are required' });
   }
 
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  if (!isValidLatitude(lat) || !isValidLongitude(lng)) {
     return res.status(400).json({ success: false, message: 'GPS coordinates are out of valid range' });
   }
 
@@ -47,12 +51,6 @@ exports.createAlert = async (req, res) => {
         duplicate: true,
         message: 'Detection event already processed'
       });
-    }
-
-    // 3. Determine Patrol Area Boundary
-    let insideGuardArea = false;
-    if (req.guard && req.guard.patrolArea) {
-      insideGuardArea = isPointInPolygon([lng, lat], req.guard.patrolArea);
     }
 
     let finalLocationName = locationName;
@@ -77,7 +75,7 @@ exports.createAlert = async (req, res) => {
         coordinates: [lng, lat] 
       },
       locationName: finalLocationName || 'Sector Analyzed',
-      insideGuardArea,
+      insideGuardArea: false,
       status: 'active'
     };
 
@@ -263,7 +261,11 @@ exports.updateAlertStatus = async (req, res) => {
 // @access  Private
 exports.resendNotification = async (req, res) => {
   try {
-    const delivery = await resendNotification(req.params.deliveryId, req.app.get('socketio'));
+    const delivery = await resendNotification(
+      req.params.deliveryId,
+      req.app.get('socketio'),
+      req.guard._id
+    );
     res.json(delivery);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -275,18 +277,29 @@ exports.resendNotification = async (req, res) => {
 // @access  Private
 exports.testNotification = async (req, res) => {
   try {
-    const { chatId } = req.body;
+    const {
+      chatId,
+      latitude,
+      longitude,
+      locationName,
+    } = req.body;
     if (!chatId) return res.status(400).json({ message: 'Chat ID required' });
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!isValidLatitude(lat) || !isValidLongitude(lng)) {
+      return res.status(400).json({ message: 'Valid latitude and longitude are required' });
+    }
 
     const { sendAlert } = require('../services/telegramService');
     const result = await sendAlert(chatId, {
       id: 'test',
-      locationName: 'Test Connectivity Node',
-      areaName: 'Test Connectivity Node',
+      locationName: locationName || 'Test Connectivity Node',
+      areaName: locationName || 'Test Connectivity Node',
       detectedAt: new Date(),
       confidence: 1.0,
-      latitude: 7.8731,
-      longitude: 80.7718,
+      latitude: lat,
+      longitude: lng,
       distanceFromResident: 0
     });
 

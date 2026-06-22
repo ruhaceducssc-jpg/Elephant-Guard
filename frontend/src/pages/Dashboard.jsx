@@ -72,7 +72,10 @@ const Dashboard = () => {
     const userData = JSON.parse(localStorage.getItem('user') || '{}');
     const guardId = userData.id || userData._id;
 
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
+    const token = localStorage.getItem('token');
+    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
+      auth: { token },
+    });
     
     if (guardId) {
       socket.emit('join', guardId);

@@ -12,6 +12,8 @@ const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 let bot;
 let io;
+let lastPollingErrorLogAt = 0;
+let lastPollingErrorMessage = '';
 
 /**
  * Initializes the Telegram bot and socket instance
@@ -23,6 +25,19 @@ const init = (socketIo) => {
     try {
       bot = new TelegramBot(token, { polling: true });
       console.log('✅ Telegram Bot initialized with polling enabled');
+
+      bot.on('polling_error', (error) => {
+        const now = Date.now();
+        const message = error?.message || 'Unknown Telegram polling error';
+        const shouldLog = message !== lastPollingErrorMessage
+          || now - lastPollingErrorLogAt >= 60000;
+
+        if (shouldLog) {
+          console.error(`Telegram polling unavailable: ${message}`);
+          lastPollingErrorMessage = message;
+          lastPollingErrorLogAt = now;
+        }
+      });
       
       bot.getMe().then(me => {
         console.log(`✅ Bot Identity: @${me.username} (${me.first_name})`);

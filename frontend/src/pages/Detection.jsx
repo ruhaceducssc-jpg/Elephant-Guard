@@ -107,6 +107,20 @@ const Detection = () => {
 
   const createAlertInternal = async (imageBlob, confidence, isManual = false) => {
     if (isManual && isProcessingRef.current) return false;
+
+    const latitude = Number(location?.lat);
+    const longitude = Number(location?.lng);
+    const hasValidLocation = Number.isFinite(latitude)
+      && latitude >= -90
+      && latitude <= 90
+      && Number.isFinite(longitude)
+      && longitude >= -180
+      && longitude <= 180;
+
+    if (!hasValidLocation) {
+      toast.error('A valid live GPS location is required to create a detection');
+      return false;
+    }
     
     if (!isManual && (Date.now() - lastAlertTimeRef.current < ALERT_COOLDOWN_MS)) {
       isProcessingRef.current = false;
@@ -123,8 +137,8 @@ const Detection = () => {
       
       const formData = new FormData();
       formData.append('image', imageBlob, 'detection.jpg');
-      formData.append('latitude', location?.lat || 7.8731);
-      formData.append('longitude', location?.lng || 80.7718);
+      formData.append('latitude', latitude);
+      formData.append('longitude', longitude);
       formData.append('locationName', isManual ? 'Manual Upload' : 'Automated Detection');
       formData.append('confidence', confidence);
       formData.append('source', isManual ? 'manual' : 'camera');
@@ -141,7 +155,12 @@ const Detection = () => {
         lastAlertTimeRef.current = Date.now();
         if (isMounted.current) setLastAlertTime(Date.now());
         
-        toast.success(isManual ? 'Manual detection record created' : 'Elephant Detected! Alerts sent to community.', { 
+        const alertsSent = Number(response.data?.notificationStatus === 'completed');
+        toast.success(isManual
+          ? 'Manual detection record created'
+          : alertsSent
+            ? 'Elephant detected. Eligible residents were evaluated.'
+            : 'Elephant detected. No automatic resident alert was eligible.', {
           duration: 8000,
           icon: isManual ? '✅' : '🐘'
         });

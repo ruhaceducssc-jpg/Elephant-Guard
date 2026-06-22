@@ -27,6 +27,7 @@ const MapController = ({ points }) => {
 const PatrolAreaSelector = ({ initialPolygon, onSave }) => {
   const [points, setPoints] = useState([]);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   useEffect(() => {
     if (initialPolygon && initialPolygon.coordinates && initialPolygon.coordinates[0]) {
@@ -62,7 +63,7 @@ const PatrolAreaSelector = ({ initialPolygon, onSave }) => {
     setPoints(prev => prev.slice(0, -1));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (points.length < 3) {
       toast.error('Please select at least 3 points to define an area');
       return;
@@ -73,11 +74,32 @@ const PatrolAreaSelector = ({ initialPolygon, onSave }) => {
     // Leaflet [lat, lng] -> GeoJSON [lng, lat]
     const geoJSONCoordinates = [closedPoints.map(p => [p[1], p[0]])];
     
-    setIsConfirmed(true);
-    onSave({
-      type: 'Polygon',
-      coordinates: geoJSONCoordinates
-    });
+    setIsSaving(true);
+    try {
+      const savedPolygon = await onSave({
+        type: 'Polygon',
+        coordinates: geoJSONCoordinates
+      });
+
+      if (savedPolygon?.coordinates?.[0]) {
+        const savedPoints = savedPolygon.coordinates[0].map(
+          ([longitude, latitude]) => [latitude, longitude]
+        );
+        if (
+          savedPoints.length > 1
+          && savedPoints[0][0] === savedPoints[savedPoints.length - 1][0]
+          && savedPoints[0][1] === savedPoints[savedPoints.length - 1][1]
+        ) {
+          savedPoints.pop();
+        }
+        setPoints(savedPoints);
+      }
+      setIsConfirmed(true);
+    } catch {
+      setIsConfirmed(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -167,10 +189,15 @@ const PatrolAreaSelector = ({ initialPolygon, onSave }) => {
         <button
           type="button"
           onClick={handleSave}
-          disabled={points.length < 3 || isConfirmed}
+          disabled={points.length < 3 || isConfirmed || isSaving}
           className={`flex-1 btn ${isConfirmed ? 'bg-success-600 text-white' : 'btn-primary'} py-4 text-xs uppercase tracking-widest font-bold shadow-lg shadow-primary-200 disabled:opacity-50 transition-all active:scale-[0.98]`}
         >
-          {isConfirmed ? (
+          {isSaving ? (
+            <>
+              <div className="w-[18px] h-[18px] border-2 border-current/30 border-t-current rounded-full animate-spin" />
+              Saving Patrol Boundary
+            </>
+          ) : isConfirmed ? (
             <>
               <CheckCircle size={18} />
               Patrol Area Boundary Confirmed

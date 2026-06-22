@@ -278,7 +278,11 @@ exports.acknowledgeHelp = async (req, res) => {
 exports.resendSingle = async (req, res) => {
   const { resendNotification } = require('../services/notificationService');
   try {
-    const delivery = await resendNotification(req.params.deliveryId, req.app.get('socketio'));
+    const delivery = await resendNotification(
+      req.params.deliveryId,
+      req.app.get('socketio'),
+      req.guard._id
+    );
     res.json({ success: true, delivery });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

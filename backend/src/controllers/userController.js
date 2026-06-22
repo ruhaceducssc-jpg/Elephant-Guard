@@ -1,4 +1,36 @@
 const User = require('../models/User');
+const {
+  isValidLatitude,
+  isValidLongitude,
+} = require('../utils/alertUtils');
+
+const parseResidentLocation = ({ longitude, latitude }) => {
+  const parsedLongitude = Number(longitude);
+  const parsedLatitude = Number(latitude);
+
+  if (!isValidLongitude(parsedLongitude) || !isValidLatitude(parsedLatitude)) {
+    const error = new Error('Resident latitude or longitude is invalid');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return [parsedLongitude, parsedLatitude];
+};
+
+const parseGeofenceRadius = (value, { required = false } = {}) => {
+  if ((value === undefined || value === null || value === '') && !required) {
+    return undefined;
+  }
+
+  const radiusMeters = Number(value);
+  if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+    const error = new Error('Geofence radius must be a positive number of meters');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return radiusMeters;
+};
 
 // @desc    Register a new public user
 // @route   POST /api/users
@@ -11,6 +43,9 @@ exports.createUser = async (req, res) => {
   }
 
   try {
+    const coordinates = parseResidentLocation({ longitude, latitude });
+    const radiusMeters = parseGeofenceRadius(geofenceRadiusMeters);
+
     // Check if user with phone already exists
     const userExists = await User.findOne({ phone });
     if (userExists) {
@@ -26,10 +61,10 @@ exports.createUser = async (req, res) => {
       village,
       areaLocation: {
         type: 'Point',
-        coordinates: [parseFloat(longitude), parseFloat(latitude)],
+        coordinates,
         areaName
       },
-      geofenceRadiusMeters: parseFloat(geofenceRadiusMeters) || 1000,
+      ...(radiusMeters !== undefined ? { geofenceRadiusMeters: radiusMeters } : {}),
       notificationEnabled: notificationEnabled !== undefined ? notificationEnabled : true,
       registeredBy: req.guard._id,
     });
@@ -41,7 +76,7 @@ exports.createUser = async (req, res) => {
         message: 'A resident with this phone number is already registered.' 
       });
     }
-    res.status(400).json({ message: error.message });
+    res.status(error.statusCode || 400).json({ message: error.message });
   }
 };
 
@@ -82,7 +117,10 @@ exports.getUserById = async (req, res) => {
 // @access  Private
 exports.updateUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findOne({
+      _id: req.params.id,
+      registeredBy: req.guard._id,
+    });
 
     if (user) {
       // Check if phone number is being changed and if new one already exists
@@ -97,15 +135,28 @@ exports.updateUser = async (req, res) => {
       }
 
       user.name = req.body.name || user.name;
-      user.telegramChatId = req.body.telegramChatId || user.telegramChatId;
+      user.telegramChatId = req.body.telegramChatId !== undefined
+        ? req.body.telegramChatId
+        : user.telegramChatId;
       user.village = req.body.village || user.village;
       
-      if (req.body.longitude && req.body.latitude) {
-        user.areaLocation.coordinates = [parseFloat(req.body.longitude), parseFloat(req.body.latitude)];
+      const locationWasProvided = req.body.longitude !== undefined || req.body.latitude !== undefined;
+      if (locationWasProvided) {
+        if (req.body.longitude === undefined || req.body.latitude === undefined) {
+          return res.status(400).json({
+            message: 'Both resident latitude and longitude are required when updating location',
+          });
+        }
+        user.areaLocation.coordinates = parseResidentLocation(req.body);
       }
       
       user.areaLocation.areaName = req.body.areaName || user.areaLocation.areaName;
-      user.geofenceRadiusMeters = req.body.geofenceRadiusMeters !== undefined ? parseFloat(req.body.geofenceRadiusMeters) : user.geofenceRadiusMeters;
+      if (req.body.geofenceRadiusMeters !== undefined) {
+        user.geofenceRadiusMeters = parseGeofenceRadius(
+          req.body.geofenceRadiusMeters,
+          { required: true }
+        );
+      }
       user.notificationEnabled = req.body.notificationEnabled !== undefined ? req.body.notificationEnabled : user.notificationEnabled;
 
       const updatedUser = await user.save();
@@ -114,7 +165,7 @@ exports.updateUser = async (req, res) => {
       res.status(404).json({ message: 'User not found' });
     }
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(error.statusCode || 400).json({ message: error.message });
   }
 };
 
@@ -123,7 +174,10 @@ exports.updateUser = async (req, res) => {
 // @access  Private
 exports.deleteUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findOne({
+      _id: req.params.id,
+      registeredBy: req.guard._id,
+    });
 
     if (user) {
       await user.deleteOne();

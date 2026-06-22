@@ -1,6 +1,10 @@
 const Guard = require('../models/Guard');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
+const {
+  PatrolAreaValidationError,
+  normalizePatrolArea,
+} = require('../utils/alertUtils');
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -46,23 +50,19 @@ exports.registerGuard = async (req, res) => {
     let validPatrolArea = null;
     let pointCount = 0;
     if (patrolArea) {
-      if (patrolArea.type !== 'Polygon' || !patrolArea.coordinates || !patrolArea.coordinates[0]) {
-        return res.status(400).json({ 
-          success: false,
-          code: 'INVALID_PATROL_AREA',
-          message: 'Invalid patrol area format' 
-        });
+      try {
+        validPatrolArea = normalizePatrolArea(patrolArea);
+        pointCount = validPatrolArea.coordinates[0].length;
+      } catch (error) {
+        if (error instanceof PatrolAreaValidationError) {
+          return res.status(400).json({
+            success: false,
+            code: 'INVALID_PATROL_AREA',
+            message: error.message,
+          });
+        }
+        throw error;
       }
-      const coords = patrolArea.coordinates[0];
-      if (coords.length < 4) {
-        return res.status(400).json({ 
-          success: false,
-          code: 'INVALID_PATROL_AREA',
-          message: 'Patrol area must have at least 3 points' 
-        });
-      }
-      validPatrolArea = patrolArea;
-      pointCount = coords.length;
     }
 
     // 3. Create Guard Account
